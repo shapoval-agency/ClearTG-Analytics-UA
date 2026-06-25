@@ -77,7 +77,10 @@ TELEGRAM_WEBHOOK_URL=
 1. [vercel.com](https://vercel.com) → Login with GitHub  
 2. **Add New Project** → импорт того же репозитория  
 3. **Root Directory** → `apps/web` → Continue  
-4. **Environment Variables**:
+   (если Root не задан — сработает `vercel.json` в корне репо)  
+4. **Build Command**: `pnpm --filter @cleartg/web build`  
+   **НЕ** `pnpm run build` — он собирает API и падает на Prisma  
+5. **Environment Variables**:
 
 ```env
 NEXT_PUBLIC_APP_URL=https://ВАШ-ПРОЕКТ.vercel.app

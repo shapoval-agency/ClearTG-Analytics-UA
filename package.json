@@ -8,6 +8,8 @@
     "dev:api": "pnpm --filter @cleartg/api dev",
     "dev:web": "pnpm --filter @cleartg/web dev",
     "build": "pnpm run -r build",
+    "build:web": "pnpm --filter @cleartg/web build",
+    "build:vercel": "pnpm --filter @cleartg/web build",
     "test": "pnpm run -r test",
     "lint": "pnpm run -r lint",
     "db:generate": "pnpm --filter @cleartg/database generate",

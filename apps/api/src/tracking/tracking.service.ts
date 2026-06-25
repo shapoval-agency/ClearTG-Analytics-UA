@@ -17,7 +17,6 @@ import {
 } from '@cleartg/shared';
 import { CreateTrackingLinkDto } from './dto/create-tracking-link.dto';
 import type { LandingPageContext } from './tracking-html';
-import { InviteLinkService } from '../telegram/invite-link.service';
 
 export type TrackingPageSource = 'landing_page' | 'shortlink_page';
 
