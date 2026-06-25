@@ -1,7 +1,7 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
 
 interface TrackingLink {
   id: string;
@@ -43,7 +43,7 @@ export default async function LinksPage() {
             <div key={l.id} className="bg-white rounded-xl border p-5">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="font-mono text-brand-600">{API_URL}{l.publicPath}</p>
+                  <p className="font-mono text-brand-600">{APP_URL}{l.publicPath}</p>
                   {l.name && <p className="text-sm text-slate-600 mt-1">{l.name}</p>}
                   <p className="text-xs text-slate-500 mt-1">{LINK_MODE_LABELS[l.linkMode]}</p>
                 </div>

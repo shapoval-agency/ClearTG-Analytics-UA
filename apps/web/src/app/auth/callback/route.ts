@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getApiOrigin } from '@/lib/api-origin';
 import {
   TOKEN_COOKIE,
   WORKSPACE_COOKIE,
   SESSION_COOKIE_OPTIONS,
 } from '@/lib/session';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get('token');
@@ -14,7 +13,7 @@ export async function GET(request: NextRequest) {
   }
 
   const res = await fetch(
-    `${API_URL}/api/auth/verify?token=${encodeURIComponent(token)}`,
+    `${getApiOrigin()}/api/auth/verify?token=${encodeURIComponent(token)}`,
     { cache: 'no-store' },
   );
 

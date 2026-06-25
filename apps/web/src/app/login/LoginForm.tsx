@@ -4,30 +4,42 @@ import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-
 export default function LoginForm() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [devLink, setDevLink] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const error = searchParams.get('error');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setDevLink(null);
+    setFetchError(null);
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/magic-link`, {
+      const res = await fetch('/api/auth/magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      const data = await res.json();
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setFetchError(
+          (body as { hint?: string }).hint ??
+            'Сервер недоступний. Перевірте Railway API та API_INTERNAL_URL у Vercel.',
+        );
+        return;
+      }
+
+      const data = (await res.json()) as { devLink?: string };
       setSent(true);
       if (data.devLink) setDevLink(data.devLink);
+    } catch {
+      setFetchError('Немає зв\'язку з API. Railway ще не піднятий або невірний API_INTERNAL_URL.');
     } finally {
       setLoading(false);
     }
@@ -39,6 +51,10 @@ export default function LoginForm() {
         <h1 className="text-2xl font-semibold text-slate-900">ClearTG Analytics</h1>
         <p className="text-slate-500 mt-2 text-sm">Увійдіть через magic link на email</p>
 
+        {fetchError && (
+          <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg">{fetchError}</div>
+        )}
+
         {error && (
           <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg">
             {error === 'invalid_token' && 'Посилання недійсне або прострочене'}
@@ -49,7 +65,9 @@ export default function LoginForm() {
         {sent ? (
           <div className="mt-6 space-y-3">
             <p className="text-sm text-green-700 bg-green-50 p-3 rounded-lg">
-              Якщо email зареєстровано, ми надіслали посилання для входу.
+              {devLink
+                ? 'Посилання для входу нижче (staging).'
+                : 'Якщо email зареєстровано, ми надіслали посилання для входу.'}
             </p>
             {devLink && (
               <div className="text-sm">

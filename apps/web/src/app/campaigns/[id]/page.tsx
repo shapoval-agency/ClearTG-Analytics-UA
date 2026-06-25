@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import { getApiOrigin } from '@/lib/api-origin';
 import { PageHeader } from '@/components/ui';
 
 interface Campaign {
@@ -27,7 +28,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
 
   if (!campaign) return <div className="text-slate-500">Кампанію не знайдено</div>;
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+  const apiUrl = process.env.NEXT_PUBLIC_APP_URL ?? getApiOrigin();
 
   return (
     <div>

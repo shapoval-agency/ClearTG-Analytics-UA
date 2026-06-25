@@ -3,7 +3,9 @@
 import { redirect } from 'next/navigation';
 import { setSession, setWorkspace, clearSession } from './session';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+import { getApiOrigin } from '@/lib/api-origin';
+
+const API_URL = getApiOrigin();
 
 export async function logoutAction() {
   await clearSession();
