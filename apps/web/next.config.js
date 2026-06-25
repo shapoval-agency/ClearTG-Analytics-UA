@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  output: 'standalone',
+  ...(process.env.DOCKER_BUILD === 'true' ? { output: 'standalone' } : {}),
   async rewrites() {
     // Прокси на Railway API — один домен Vercel для кабинета, /l/, /r/ и /api/
     const api =

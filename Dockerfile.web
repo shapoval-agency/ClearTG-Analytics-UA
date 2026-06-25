@@ -15,6 +15,7 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS build
 COPY apps/web ./apps/web
 ENV NODE_ENV=production
+ENV DOCKER_BUILD=true
 RUN pnpm --filter @cleartg/web build
 
 FROM base AS runner
