@@ -1,5 +1,5 @@
 {
-  "installCommand": "cd ../.. && corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install",
+  "installCommand": "cd ../.. && corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install --filter @cleartg/web",
   "buildCommand": "next build",
   "framework": "nextjs"
 }
