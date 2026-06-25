@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "echo 'ERROR: API is not deployed on Vercel. In Vercel Project Settings set Root Directory to apps/web (not apps/api). Deploy API on Railway.' >&2; exit 1"
+}
