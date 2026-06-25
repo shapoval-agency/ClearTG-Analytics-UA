@@ -1,0 +1,39 @@
+FROM node:20-alpine AS base
+RUN apk add --no-cache openssl libc6-compat
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/
+COPY packages/database/package.json ./packages/database/
+COPY packages/shared/package.json ./packages/shared/
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY packages/shared ./packages/shared
+COPY packages/database ./packages/database
+COPY apps/api ./apps/api
+RUN pnpm --filter @cleartg/shared build
+RUN pnpm --filter @cleartg/database generate
+RUN pnpm --filter @cleartg/api build
+
+FROM base AS runner
+ENV NODE_ENV=staging
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=deps /app/packages/database/node_modules ./packages/database/node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=build /app/apps/api/dist ./apps/api/dist
+COPY --from=build /app/packages/shared/dist ./packages/shared/dist
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/
+COPY packages/database ./packages/database
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/shared/dist ./packages/shared/dist
+COPY scripts/entrypoint-api.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 3001
+ENTRYPOINT ["/entrypoint.sh"]

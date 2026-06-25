@@ -1,0 +1,67 @@
+# Staging: один docker compose — Postgres, Redis, API, кабинет
+# Использование: см. docs/DEPLOY-TEST.md
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cleartg
+      POSTGRES_PASSWORD: cleartg_staging
+      POSTGRES_DB: cleartg
+    volumes:
+      - staging_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cleartg -d cleartg']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    ports:
+      - '3001:3001'
+    env_file:
+      - .env.staging
+    environment:
+      NODE_ENV: staging
+      API_PORT: '3001'
+      DATABASE_URL: postgresql://cleartg:cleartg_staging@postgres:5432/cleartg?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env.staging
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - api
+
+volumes:
+  staging_postgres:

@@ -1,0 +1,755 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth & Workspace ───────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  telegramId    String?  @unique @map("telegram_id")
+  emailVerified Boolean  @default(false) @map("email_verified")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  memberships          WorkspaceMember[]
+  auditLogs            AuditLog[]
+  dataDeletionRequests DataDeletionRequest[]
+  dataExportRequests   DataExportRequest[]
+
+  @@map("users")
+}
+
+model MagicLinkToken {
+  id        String    @id @default(cuid())
+  email     String
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([email, createdAt])
+  @@map("magic_link_tokens")
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Privacy settings
+  dataRetentionDays Int     @default(365) @map("data_retention_days")
+  privacyPolicyUrl  String? @map("privacy_policy_url")
+
+  members              WorkspaceMember[]
+  channels             Channel[]
+  campaigns            Campaign[]
+  trackingLinks        TrackingLink[]
+  clickEvents          ClickEvent[]
+  inviteLinks          InviteLink[]
+  membershipEvents     MembershipEvent[]
+  attributions         Attribution[]
+  subscriberProfiles   SubscriberProfile[]
+  unsubscribeEvents    UnsubscribeEvent[]
+  consentEvents        ConsentEvent[]
+  metaIntegrations     MetaIntegration[]
+  googleAdsIntegrations GoogleAdsIntegration[]
+  ga4Integrations      GA4Integration[]
+  tiktokIntegrations   TikTokIntegration[]
+  conversionEvents     ConversionEvent[]
+  leadMagnets          LeadMagnet[]
+  mailings             Mailing[]
+  auditLogs            AuditLog[]
+  apiKeys              ApiKey[]
+  telegramBotConnections TelegramBotConnection[]
+  dataDeletionRequests DataDeletionRequest[]
+  dataExportRequests   DataExportRequest[]
+
+  @@map("workspaces")
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String        @map("workspace_id")
+  userId      String        @map("user_id")
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+// ─── Telegram ───────────────────────────────────────────────
+
+model Channel {
+  id              String   @id @default(cuid())
+  workspaceId     String   @map("workspace_id")
+  telegramChatId  String   @map("telegram_chat_id")
+  title           String
+  username        String?
+  isActive        Boolean  @default(true) @map("is_active")
+  botIsAdmin      Boolean  @default(false) @map("bot_is_admin")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaigns          Campaign[]
+  trackingLinks      TrackingLink[]
+  clickEvents        ClickEvent[]
+  inviteLinks        InviteLink[]
+  membershipEvents   MembershipEvent[]
+  attributions       Attribution[]
+  subscriberProfiles SubscriberProfile[]
+  unsubscribeEvents  UnsubscribeEvent[]
+  conversionEvents   ConversionEvent[]
+  leadMagnets        LeadMagnet[]
+
+  @@unique([workspaceId, telegramChatId])
+  @@map("channels")
+}
+
+model TelegramBotConnection {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  botUsername String   @map("bot_username")
+  isActive    Boolean  @default(true) @map("is_active")
+  connectedAt DateTime @default(now()) @map("connected_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("telegram_bot_connections")
+}
+
+// ─── Campaigns & Tracking ───────────────────────────────────
+
+enum AdPlatform {
+  META
+  GOOGLE
+  TIKTOK
+  TELEGRAM_ADS
+  INFLUENCER
+  ORGANIC
+  DIRECT
+  OTHER
+}
+
+enum SpendModel {
+  MANUAL
+  CPC
+  CPM
+  FIXED_PLACEMENT
+}
+
+enum DestinationMode {
+  PUBLIC_POST
+  INVITE_LINK
+  BOT_START
+  EXTERNAL_URL
+}
+
+enum LinkMode {
+  LANDING_PAGE
+  SHORTLINK
+}
+
+enum TargetEvent {
+  SUBSCRIBE
+  RETAINED_D1
+  RETAINED_D7
+  LEAD_MAGNET_CLAIMED
+}
+
+model Campaign {
+  id                      String      @id @default(cuid())
+  workspaceId             String      @map("workspace_id")
+  channelId               String      @map("channel_id")
+  name                    String
+  source                  String?
+  medium                  String?
+  creative                String?
+  adPlatform              AdPlatform  @default(OTHER) @map("ad_platform")
+  spendModel              SpendModel  @default(MANUAL) @map("spend_model")
+  spendAmount             Decimal?    @map("spend_amount") @db.Decimal(12, 2)
+  spendCurrency           String      @default("UAH") @map("spend_currency")
+  attributionWindowMinutes Int        @default(10080) @map("attribution_window_minutes") // 7 days
+  targetEvent             TargetEvent @default(SUBSCRIBE) @map("target_event")
+  isActive                Boolean     @default(true) @map("is_active")
+  createdAt               DateTime    @default(now()) @map("created_at")
+  updatedAt               DateTime    @updatedAt @map("updated_at")
+
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel        Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  trackingLinks  TrackingLink[]
+  clickEvents    ClickEvent[]
+  inviteLinks    InviteLink[]
+  attributions   Attribution[]
+  conversionEvents ConversionEvent[]
+
+  @@map("campaigns")
+}
+
+model TrackingLink {
+  id               String          @id @default(cuid())
+  workspaceId      String          @map("workspace_id")
+  channelId        String          @map("channel_id")
+  campaignId       String?         @map("campaign_id")
+  slug             String          @unique
+  name             String?
+  linkMode         LinkMode        @default(LANDING_PAGE) @map("link_mode")
+  landingTitle     String?         @map("landing_title")
+  landingDescription String?       @map("landing_description")
+  destinationMode  DestinationMode @default(INVITE_LINK) @map("destination_mode")
+  landingPostUrl   String?         @map("landing_post_url")
+  destinationUrl   String?         @map("destination_url")
+  autoRedirect     Boolean         @default(true) @map("auto_redirect")
+  redirectDelayMs  Int             @default(0) @map("redirect_delay_ms")
+  usePerClickInvite Boolean        @default(true) @map("use_per_click_invite")
+  utmSource        String?         @map("utm_source")
+  utmMedium        String?         @map("utm_medium")
+  utmCampaign      String?         @map("utm_campaign")
+  utmContent       String?         @map("utm_content")
+  utmTerm          String?         @map("utm_term")
+  isActive         Boolean         @default(true) @map("is_active")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  campaign     Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  clickEvents  ClickEvent[]
+  inviteLinks  InviteLink[]
+  attributions Attribution[]
+
+  @@map("tracking_links")
+}
+
+// ─── Events ─────────────────────────────────────────────────
+
+model ClickEvent {
+  id              String   @id @default(cuid())
+  workspaceId     String   @map("workspace_id")
+  channelId       String   @map("channel_id")
+  campaignId      String?  @map("campaign_id")
+  trackingLinkId  String   @map("tracking_link_id")
+  clickedAt       DateTime @default(now()) @map("clicked_at")
+
+  // Ad platform click IDs
+  fbclid          String?
+  fbp             String?
+  fbc             String?
+  gclid           String?
+  gbraid          String?
+  wbraid          String?
+  ttclid          String?
+  ttp             String?
+  gaClientId      String?  @map("ga_client_id")
+  gaSessionId     String?  @map("ga_session_id")
+
+  // UTM (may duplicate tracking link but captured at click time)
+  utmSource       String?  @map("utm_source")
+  utmMedium       String?  @map("utm_medium")
+  utmCampaign     String?  @map("utm_campaign")
+  utmContent      String?  @map("utm_content")
+  utmTerm         String?  @map("utm_term")
+
+  referrer        String?
+  ipHash          String?  @map("ip_hash")
+  userAgentHash   String?  @map("user_agent_hash")
+  browser         String?
+  device          String?
+  os              String?
+  geoCountry      String?  @map("geo_country")
+  geoRegion       String?  @map("geo_region")
+
+  // Consent snapshot at click time
+  consentSnapshot Json     @map("consent_snapshot")
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  campaign     Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  trackingLink TrackingLink @relation(fields: [trackingLinkId], references: [id], onDelete: Cascade)
+  inviteLinks  InviteLink[]
+  attributions Attribution[]
+
+  @@index([workspaceId, clickedAt])
+  @@index([trackingLinkId])
+  @@map("click_events")
+}
+
+model InviteLink {
+  id             String   @id @default(cuid())
+  workspaceId    String   @map("workspace_id")
+  channelId      String   @map("channel_id")
+  campaignId     String?  @map("campaign_id")
+  trackingLinkId String?  @map("tracking_link_id")
+  clickEventId   String?  @map("click_event_id")
+  telegramInviteLink String @map("telegram_invite_link")
+  createdAt      DateTime @default(now()) @map("created_at")
+  expiresAt      DateTime? @map("expires_at")
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel      Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  campaign     Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  trackingLink TrackingLink? @relation(fields: [trackingLinkId], references: [id], onDelete: SetNull)
+  clickEvent   ClickEvent?   @relation(fields: [clickEventId], references: [id], onDelete: SetNull)
+  membershipEvents MembershipEvent[]
+
+  @@unique([telegramInviteLink])
+  @@index([clickEventId])
+  @@map("invite_links")
+}
+
+enum MembershipEventType {
+  SUBSCRIBE
+  UNSUBSCRIBE
+  JOIN_REQUEST_APPROVED
+  JOIN_REQUEST_DECLINED
+}
+
+model MembershipEvent {
+  id                String              @id @default(cuid())
+  workspaceId       String              @map("workspace_id")
+  channelId         String              @map("channel_id")
+  eventType         MembershipEventType @map("event_type")
+  telegramUserId    String              @map("telegram_user_id")
+  telegramUsername  String?             @map("telegram_username")
+  inviteLinkId      String?             @map("invite_link_id")
+  occurredAt        DateTime            @default(now()) @map("occurred_at")
+  rawUpdateId       String?             @map("raw_update_id")
+
+  workspace          Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel            Channel            @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  inviteLink         InviteLink?        @relation(fields: [inviteLinkId], references: [id], onDelete: SetNull)
+  attribution        Attribution?
+  subscriberProfile  SubscriberProfile?
+
+  @@index([workspaceId, channelId, occurredAt])
+  @@index([telegramUserId, channelId])
+  @@map("membership_events")
+}
+
+enum AttributionType {
+  EXACT_CLICK_INVITE
+  CAMPAIGN_INVITE
+  PROBABILISTIC
+  ORGANIC
+  UNKNOWN
+}
+
+model Attribution {
+  id                       String          @id @default(cuid())
+  workspaceId              String          @map("workspace_id")
+  channelId                String          @map("channel_id")
+  membershipEventId        String          @unique @map("membership_event_id")
+  attributionType          AttributionType @map("attribution_type")
+  confidenceScore          Float           @map("confidence_score")
+  reason                   String
+  clickEventId             String?         @map("click_event_id")
+  campaignId               String?         @map("campaign_id")
+  trackingLinkId           String?         @map("tracking_link_id")
+  attributionWindowMinutes Int             @map("attribution_window_minutes")
+  manualOverride           Boolean         @default(false) @map("manual_override")
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
+
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel         Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  membershipEvent MembershipEvent @relation(fields: [membershipEventId], references: [id], onDelete: Cascade)
+  clickEvent      ClickEvent?     @relation(fields: [clickEventId], references: [id], onDelete: SetNull)
+  campaign        Campaign?       @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  trackingLink    TrackingLink?   @relation(fields: [trackingLinkId], references: [id], onDelete: SetNull)
+  conversionEvents ConversionEvent[]
+
+  @@index([workspaceId, attributionType])
+  @@map("attributions")
+}
+
+model SubscriberProfile {
+  id               String    @id @default(cuid())
+  workspaceId      String    @map("workspace_id")
+  channelId        String    @map("channel_id")
+  membershipEventId String   @unique @map("membership_event_id")
+  externalIdHash   String    @map("external_id_hash")
+  telegramUserId   String    @map("telegram_user_id")
+  subscribedAt     DateTime  @map("subscribed_at")
+  retainedD1       Boolean?  @map("retained_d1")
+  retainedD7       Boolean?  @map("retained_d7")
+  retainedD30      Boolean?  @map("retained_d30")
+  retentionCheckedAt DateTime? @map("retention_checked_at")
+  botStarted       Boolean   @default(false) @map("bot_started")
+  botOptedOut      Boolean   @default(false) @map("bot_opted_out")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel         Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  membershipEvent MembershipEvent @relation(fields: [membershipEventId], references: [id], onDelete: Cascade)
+  unsubscribeEvents UnsubscribeEvent[]
+  leadMagnetClaims  LeadMagnetClaim[]
+  mailingRecipients MailingRecipient[]
+  conversionEvents  ConversionEvent[]
+
+  @@unique([workspaceId, channelId, telegramUserId])
+  @@map("subscriber_profiles")
+}
+
+model UnsubscribeEvent {
+  id                  String   @id @default(cuid())
+  workspaceId         String   @map("workspace_id")
+  channelId           String   @map("channel_id")
+  subscriberProfileId String?  @map("subscriber_profile_id")
+  telegramUserId      String   @map("telegram_user_id")
+  occurredAt          DateTime @default(now()) @map("occurred_at")
+
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel           Channel            @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  subscriberProfile SubscriberProfile? @relation(fields: [subscriberProfileId], references: [id], onDelete: SetNull)
+
+  @@map("unsubscribe_events")
+}
+
+enum ConsentStatus {
+  GRANTED
+  DENIED
+  UNKNOWN
+}
+
+model ConsentEvent {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  sessionId   String?  @map("session_id")
+  clickEventId String? @map("click_event_id")
+  source      String
+  consentData Json     @map("consent_data")
+  ipHash      String?  @map("ip_hash")
+  userAgentHash String? @map("user_agent_hash")
+  recordedAt  DateTime @default(now()) @map("recorded_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, recordedAt])
+  @@map("consent_events")
+}
+
+// ─── Integrations ───────────────────────────────────────────
+
+model MetaIntegration {
+  id              String   @id @default(cuid())
+  workspaceId     String   @map("workspace_id")
+  pixelId         String   @map("pixel_id")
+  accessTokenEnc  String   @map("access_token_enc")
+  testEventCode   String?  @map("test_event_code")
+  eventMapping    Json     @default("{}") @map("event_mapping")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("meta_integrations")
+}
+
+model GoogleAdsIntegration {
+  id                  String   @id @default(cuid())
+  workspaceId         String   @map("workspace_id")
+  customerId          String   @map("customer_id")
+  conversionActionId  String   @map("conversion_action_id")
+  managerAccountId    String?  @map("manager_account_id")
+  oauthCredentialsEnc String   @map("oauth_credentials_enc")
+  eventMapping        Json     @default("{}") @map("event_mapping")
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("google_ads_integrations")
+}
+
+model GA4Integration {
+  id              String   @id @default(cuid())
+  workspaceId     String   @map("workspace_id")
+  measurementId   String   @map("measurement_id")
+  apiSecretEnc    String   @map("api_secret_enc")
+  streamId        String?  @map("stream_id")
+  eventMapping    Json     @default("{}") @map("event_mapping")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("ga4_integrations")
+}
+
+model TikTokIntegration {
+  id              String   @id @default(cuid())
+  workspaceId     String   @map("workspace_id")
+  pixelId         String   @map("pixel_id")
+  accessTokenEnc  String   @map("access_token_enc")
+  testEventCode   String?  @map("test_event_code")
+  eventMapping    Json     @default("{}") @map("event_mapping")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("tiktok_integrations")
+}
+
+// ─── Conversions ────────────────────────────────────────────
+
+enum EventSource {
+  TELEGRAM_SUBSCRIPTION
+  TELEGRAM_RETENTION
+  LEAD_MAGNET
+  MANUAL
+}
+
+enum ConversionEventStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED_NO_CONSENT
+  SKIPPED_NO_IDENTIFIER
+  SKIPPED_POLICY_RESTRICTION
+}
+
+enum ConversionPlatform {
+  META
+  GOOGLE_ADS
+  GA4
+  TIKTOK
+}
+
+model ConversionEvent {
+  id                  String                @id @default(cuid())
+  workspaceId         String                @map("workspace_id")
+  channelId           String?               @map("channel_id")
+  campaignId          String?               @map("campaign_id")
+  clickEventId        String?               @map("click_event_id")
+  attributionId       String?               @map("attribution_id")
+  subscriberProfileId String?               @map("subscriber_profile_id")
+  eventName           String                @map("event_name")
+  eventTime           DateTime              @map("event_time")
+  eventSource         EventSource           @map("event_source")
+  eventId             String                @map("event_id")
+  value               Decimal?              @db.Decimal(12, 2)
+  currency            String                @default("UAH")
+  consentSnapshot     Json                  @map("consent_snapshot")
+  eligibilityFlags    Json                  @map("eligibility_flags")
+  payloadPreview      Json?                 @map("payload_preview")
+  status              ConversionEventStatus @default(PENDING)
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel           Channel?           @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  campaign          Campaign?          @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  attribution       Attribution?       @relation(fields: [attributionId], references: [id], onDelete: SetNull)
+  subscriberProfile SubscriberProfile? @relation(fields: [subscriberProfileId], references: [id], onDelete: SetNull)
+  deliveryLogs      ConversionDeliveryLog[]
+
+  @@unique([workspaceId, eventId])
+  @@index([workspaceId, status])
+  @@map("conversion_events")
+}
+
+model ConversionDeliveryLog {
+  id                String             @id @default(cuid())
+  conversionEventId String             @map("conversion_event_id")
+  platform          ConversionPlatform
+  status            ConversionEventStatus
+  requestPayload    Json?              @map("request_payload")
+  responseStatus    Int?               @map("response_status")
+  responseBody      Json?              @map("response_body")
+  errorMessage      String?            @map("error_message")
+  attemptNumber     Int                @default(1) @map("attempt_number")
+  deliveredAt       DateTime           @default(now()) @map("delivered_at")
+
+  conversionEvent ConversionEvent @relation(fields: [conversionEventId], references: [id], onDelete: Cascade)
+
+  @@index([conversionEventId])
+  @@map("conversion_delivery_logs")
+}
+
+// ─── Lead Magnet & Mailing ──────────────────────────────────
+
+model LeadMagnet {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  channelId   String   @map("channel_id")
+  slug        String   @unique
+  name        String
+  description String?
+  contentUrl  String?  @map("content_url")
+  consentText String   @map("consent_text")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel   Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  claims    LeadMagnetClaim[]
+
+  @@index([workspaceId])
+  @@map("lead_magnets")
+}
+
+model LeadMagnetClaim {
+  id                  String   @id @default(cuid())
+  leadMagnetId        String   @map("lead_magnet_id")
+  subscriberProfileId String   @map("subscriber_profile_id")
+  claimedAt           DateTime @default(now()) @map("claimed_at")
+  consentRecorded     Boolean  @default(true) @map("consent_recorded")
+
+  leadMagnet        LeadMagnet        @relation(fields: [leadMagnetId], references: [id], onDelete: Cascade)
+  subscriberProfile SubscriberProfile @relation(fields: [subscriberProfileId], references: [id], onDelete: Cascade)
+
+  @@map("lead_magnet_claims")
+}
+
+enum MailingStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENDING
+  SENT
+  CANCELLED
+}
+
+model Mailing {
+  id          String        @id @default(cuid())
+  workspaceId String        @map("workspace_id")
+  name        String
+  content     String
+  status      MailingStatus @default(DRAFT)
+  approvedBy  String?       @map("approved_by")
+  approvedAt  DateTime?     @map("approved_at")
+  sentAt      DateTime?     @map("sent_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  workspace  Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  recipients MailingRecipient[]
+
+  @@map("mailings")
+}
+
+model MailingRecipient {
+  id                  String   @id @default(cuid())
+  mailingId           String   @map("mailing_id")
+  subscriberProfileId String   @map("subscriber_profile_id")
+  sentAt              DateTime? @map("sent_at")
+  failedAt            DateTime? @map("failed_at")
+  errorMessage        String?  @map("error_message")
+
+  mailing           Mailing           @relation(fields: [mailingId], references: [id], onDelete: Cascade)
+  subscriberProfile SubscriberProfile @relation(fields: [subscriberProfileId], references: [id], onDelete: Cascade)
+
+  @@map("mailing_recipients")
+}
+
+// ─── Privacy & Compliance ───────────────────────────────────
+
+enum DataRequestStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+}
+
+model DataDeletionRequest {
+  id          String            @id @default(cuid())
+  workspaceId String?           @map("workspace_id")
+  userId      String?           @map("user_id")
+  email       String?
+  telegramUserId String?        @map("telegram_user_id")
+  reason      String?
+  status      DataRequestStatus @default(PENDING)
+  completedAt DateTime?         @map("completed_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("data_deletion_requests")
+}
+
+model DataExportRequest {
+  id          String            @id @default(cuid())
+  workspaceId String?           @map("workspace_id")
+  userId      String            @map("user_id")
+  status      DataRequestStatus @default(PENDING)
+  exportUrl   String?           @map("export_url")
+  completedAt DateTime?         @map("completed_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("data_export_requests")
+}
+
+// ─── Audit & API ────────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String?  @map("workspace_id")
+  userId      String?  @map("user_id")
+  action      String
+  entityType  String?  @map("entity_type")
+  entityId    String?  @map("entity_id")
+  metadata    Json?
+  ipHash      String?  @map("ip_hash")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@map("audit_logs")
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  name        String
+  keyHash     String    @unique @map("key_hash")
+  lastUsedAt  DateTime? @map("last_used_at")
+  expiresAt   DateTime? @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model WebhookEventRaw {
+  id          String   @id @default(cuid())
+  source      String
+  eventType   String   @map("event_type")
+  payload     Json
+  processed   Boolean  @default(false)
+  receivedAt  DateTime @default(now()) @map("received_at")
+
+  @@index([source, receivedAt])
+  @@map("webhook_events_raw")
+}
