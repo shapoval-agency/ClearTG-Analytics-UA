@@ -113,10 +113,34 @@ export class TelegramService {
 
       const newStatus = ctx.myChatMember.new_chat_member.status;
       const isAdmin = newStatus === 'administrator';
+      const telegramChatId = String(chat.id);
+      const username = 'username' in chat ? chat.username ?? null : null;
+
+      const existing = await this.prisma.channel.findFirst({
+        where: { telegramChatId },
+      });
+
+      if (!existing && isAdmin && process.env.STAGING_MODE === 'true') {
+        const workspace = await this.prisma.workspace.findFirst({
+          orderBy: { createdAt: 'asc' },
+        });
+        if (workspace) {
+          await this.prisma.channel.create({
+            data: {
+              workspaceId: workspace.id,
+              telegramChatId,
+              title: chat.title ?? 'Channel',
+              username,
+              botIsAdmin: true,
+            },
+          });
+          this.logger.log(`Auto-registered channel ${telegramChatId} for workspace ${workspace.id}`, 'Telegram');
+        }
+      }
 
       await this.prisma.channel.updateMany({
-        where: { telegramChatId: String(chat.id) },
-        data: { botIsAdmin: isAdmin, title: chat.title ?? 'Channel' },
+        where: { telegramChatId },
+        data: { botIsAdmin: isAdmin, title: chat.title ?? 'Channel', username },
       });
 
       this.logger.log(`Bot status in channel ${chat.id}: ${newStatus}`, 'Telegram');

@@ -1,5 +1,4 @@
 import { getSession } from './session';
-
 import { getApiOrigin } from '@/lib/api-origin';
 
 const API_URL = getApiOrigin();

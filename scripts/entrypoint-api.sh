@@ -16,7 +16,7 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-echo "Seeding demo data..."
+echo "Seeding initial workspace..."
 npx tsx prisma/seed.ts || true
 
 echo "Starting API on port ${API_PORT:-3001}..."

@@ -1,11 +1,23 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { setSession, setWorkspace, clearSession } from './session';
-
+import { cookies } from 'next/headers';
+import { setWorkspace, clearSession } from './session';
 import { getApiOrigin } from '@/lib/api-origin';
 
 const API_URL = getApiOrigin();
+
+async function authHeaders() {
+  const jar = await cookies();
+  const token = jar.get('cleartg_token')?.value;
+  const workspaceId = jar.get('cleartg_workspace')?.value;
+  if (!token || !workspaceId) return null;
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+    'x-workspace-id': workspaceId,
+  };
+}
 
 export async function logoutAction() {
   await clearSession();
@@ -13,7 +25,6 @@ export async function logoutAction() {
 }
 
 export async function createWorkspaceAction(name: string) {
-  const { cookies } = await import('next/headers');
   const token = (await cookies()).get('cleartg_token')?.value;
   if (!token) redirect('/login');
 
@@ -35,42 +46,81 @@ export async function createWorkspaceAction(name: string) {
   redirect('/dashboard');
 }
 
+export async function createCampaignAction(data: {
+  channelId: string;
+  name: string;
+  adPlatform?: string;
+  source?: string;
+  medium?: string;
+}) {
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
+
+  const res = await fetch(`${API_URL}/api/campaigns`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) return { error: 'Не вдалося створити кампанію' };
+  redirect('/campaigns');
+}
+
+export async function createTrackingLinkAction(data: {
+  channelId: string;
+  campaignId?: string;
+  name?: string;
+  linkMode?: 'LANDING_PAGE' | 'SHORTLINK';
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+}) {
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
+
+  const res = await fetch(`${API_URL}/api/tracking-links`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      autoRedirect: true,
+      redirectDelayMs: 0,
+      usePerClickInvite: data.linkMode !== 'SHORTLINK',
+      destinationMode: data.linkMode === 'SHORTLINK' ? 'PUBLIC_POST' : 'INVITE_LINK',
+      ...data,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return { error: (body as { message?: string | string[] }).message?.toString() ?? 'Не вдалося створити посилання' };
+  }
+
+  redirect('/links');
+}
+
 export async function saveMetaIntegrationAction(data: {
   pixelId: string;
   accessToken: string;
   testEventCode?: string;
 }) {
-  const { cookies } = await import('next/headers');
-  const jar = await cookies();
-  const token = jar.get('cleartg_token')?.value;
-  const workspaceId = jar.get('cleartg_workspace')?.value;
-  if (!token || !workspaceId) return { error: 'Not authenticated' };
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
 
   const res = await fetch(`${API_URL}/api/integrations/meta`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      'x-workspace-id': workspaceId,
-    },
+    headers,
     body: JSON.stringify(data),
   });
   return { ok: res.ok };
 }
 
 export async function testMetaEventAction() {
-  const { cookies } = await import('next/headers');
-  const jar = await cookies();
-  const token = jar.get('cleartg_token')?.value;
-  const workspaceId = jar.get('cleartg_workspace')?.value;
-  if (!token || !workspaceId) return { error: 'Not authenticated' };
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
 
   const res = await fetch(`${API_URL}/api/integrations/meta/test-event`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'x-workspace-id': workspaceId,
-    },
+    headers,
   });
   const body = await res.json();
   return { ok: res.ok, body };
@@ -81,37 +131,24 @@ export async function saveGA4IntegrationAction(data: {
   apiSecret: string;
   streamId?: string;
 }) {
-  const { cookies } = await import('next/headers');
-  const jar = await cookies();
-  const token = jar.get('cleartg_token')?.value;
-  const workspaceId = jar.get('cleartg_workspace')?.value;
-  if (!token || !workspaceId) return { error: 'Not authenticated' };
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
 
   const res = await fetch(`${API_URL}/api/integrations/ga4`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      'x-workspace-id': workspaceId,
-    },
+    headers,
     body: JSON.stringify(data),
   });
   return { ok: res.ok };
 }
 
 export async function testGA4EventAction() {
-  const { cookies } = await import('next/headers');
-  const jar = await cookies();
-  const token = jar.get('cleartg_token')?.value;
-  const workspaceId = jar.get('cleartg_workspace')?.value;
-  if (!token || !workspaceId) return { error: 'Not authenticated' };
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
 
   const res = await fetch(`${API_URL}/api/integrations/ga4/test-event`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'x-workspace-id': workspaceId,
-    },
+    headers,
   });
   const body = await res.json();
   return { ok: res.ok, body };
@@ -124,19 +161,12 @@ export async function createLeadMagnetAction(data: {
   consentText: string;
   description?: string;
 }) {
-  const { cookies } = await import('next/headers');
-  const jar = await cookies();
-  const token = jar.get('cleartg_token')?.value;
-  const workspaceId = jar.get('cleartg_workspace')?.value;
-  if (!token || !workspaceId) return { error: 'Not authenticated' };
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
 
   const res = await fetch(`${API_URL}/api/lead-magnets`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      'x-workspace-id': workspaceId,
-    },
+    headers,
     body: JSON.stringify(data),
   });
 
@@ -145,25 +175,12 @@ export async function createLeadMagnetAction(data: {
   return { ok: true, botLink: body.botLink as string };
 }
 
-async function googleAdsHeaders() {
-  const { cookies } = await import('next/headers');
-  const jar = await cookies();
-  const token = jar.get('cleartg_token')?.value;
-  const workspaceId = jar.get('cleartg_workspace')?.value;
-  if (!token || !workspaceId) return null;
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`,
-    'x-workspace-id': workspaceId,
-  };
-}
-
 export async function saveGoogleAdsIntegrationAction(data: {
   customerId: string;
   conversionActionId: string;
   managerAccountId?: string;
 }) {
-  const headers = await googleAdsHeaders();
+  const headers = await authHeaders();
   if (!headers) return { error: 'Not authenticated' };
 
   const res = await fetch(`${API_URL}/api/integrations/google-ads`, {
@@ -175,7 +192,7 @@ export async function saveGoogleAdsIntegrationAction(data: {
 }
 
 export async function getGoogleAdsAuthUrlAction() {
-  const headers = await googleAdsHeaders();
+  const headers = await authHeaders();
   if (!headers) return { error: 'Not authenticated' };
 
   const res = await fetch(`${API_URL}/api/integrations/google-ads/auth-url`, { headers });
@@ -185,7 +202,7 @@ export async function getGoogleAdsAuthUrlAction() {
 }
 
 export async function testGoogleAdsEventAction() {
-  const headers = await googleAdsHeaders();
+  const headers = await authHeaders();
   if (!headers) return { error: 'Not authenticated' };
 
   const res = await fetch(`${API_URL}/api/integrations/google-ads/test-event`, {
@@ -201,7 +218,7 @@ export async function saveTikTokIntegrationAction(data: {
   accessToken: string;
   testEventCode?: string;
 }) {
-  const headers = await googleAdsHeaders();
+  const headers = await authHeaders();
   if (!headers) return { error: 'Not authenticated' };
 
   const res = await fetch(`${API_URL}/api/integrations/tiktok`, {
@@ -213,7 +230,7 @@ export async function saveTikTokIntegrationAction(data: {
 }
 
 export async function testTikTokEventAction() {
-  const headers = await googleAdsHeaders();
+  const headers = await authHeaders();
   if (!headers) return { error: 'Not authenticated' };
 
   const res = await fetch(`${API_URL}/api/integrations/tiktok/test-event`, {

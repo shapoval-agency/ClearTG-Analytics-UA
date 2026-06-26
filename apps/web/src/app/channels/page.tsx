@@ -2,7 +2,6 @@ import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import Link from 'next/link';
 
-
 interface Channel {
   id: string;
   title: string;
@@ -13,6 +12,8 @@ interface Channel {
 }
 
 export default async function ChannelsPage() {
+  const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? 'cleartg_bot';
+
   let channels: Channel[] = [];
   try {
     channels = await api<Channel[]>('/api/channels');
@@ -21,9 +22,20 @@ export default async function ChannelsPage() {
   return (
     <div>
       <PageHeader title="Канали" description="Telegram-канали, підключені до workspace" />
+
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 mb-6 text-sm text-blue-900">
+        <p className="font-medium mb-2">Підключення каналу</p>
+        <ol className="list-decimal list-inside space-y-1 text-blue-800">
+          <li>Відкрийте свій Telegram-канал → Адміністратори → Додати адміністратора</li>
+          <li>Знайдіть бота <strong>@{botUsername}</strong> і додайте його</li>
+          <li>Увімкніть право «Додавання учасників» (для invite-лінків)</li>
+          <li>Канал з&apos;явиться тут автоматично протягом кількох секунд</li>
+        </ol>
+      </div>
+
       {channels.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-500">
-          <p>Немає каналів. Додайте бота адміністратором каналу та зареєструйте канал через API.</p>
+          <p>Ще немає каналів. Додайте бота адміністратором — він з&apos;явиться тут.</p>
         </div>
       ) : (
         <div className="grid gap-4">

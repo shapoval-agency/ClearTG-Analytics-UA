@@ -1,6 +1,7 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import Link from 'next/link';
+import { CreateCampaignForm } from './CreateCampaignForm';
 
 interface Campaign {
   id: string;
@@ -20,10 +21,12 @@ interface CampaignReport {
 export default async function CampaignsPage() {
   let campaigns: Campaign[] = [];
   let reports: CampaignReport[] = [];
+  let channels: Array<{ id: string; title: string }> = [];
   try {
-    [campaigns, reports] = await Promise.all([
+    [campaigns, reports, channels] = await Promise.all([
       api<Campaign[]>('/api/campaigns'),
       api<CampaignReport[]>('/api/dashboard/campaigns'),
+      api<Array<{ id: string; title: string }>>('/api/channels'),
     ]);
   } catch { /* empty */ }
 
@@ -32,6 +35,7 @@ export default async function CampaignsPage() {
   return (
     <div>
       <PageHeader title="Кампанії" description="Рекламні кампанії та джерела трафіку" />
+      <CreateCampaignForm channels={channels} />
       {campaigns.length === 0 ? (
         <div className="bg-white rounded-xl border p-8 text-center text-slate-500">Немає кампаній</div>
       ) : (

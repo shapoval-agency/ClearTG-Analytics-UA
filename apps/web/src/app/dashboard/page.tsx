@@ -28,7 +28,7 @@ export default async function DashboardPage() {
       {!data ? (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-800">
           <p className="font-medium">API недоступний</p>
-          <p className="text-sm mt-1">Запустіть docker compose та API сервер. Потім створіть workspace через POST /api/workspaces.</p>
+          <p className="text-sm mt-1">Перевірте Railway API та змінну API_INTERNAL_URL у Vercel.</p>
         </div>
       ) : (
         <>

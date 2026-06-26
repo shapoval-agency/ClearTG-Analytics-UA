@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
@@ -69,6 +69,59 @@ export class AuthService {
     const user = await this.prisma.user.upsert({
       where: { email: record.email },
       create: { email: record.email, emailVerified: true },
+      update: { emailVerified: true },
+    });
+
+    const workspaces = await this.prisma.workspaceMember.findMany({
+      where: { userId: user.id },
+      include: {
+        workspace: { select: { id: true, name: true, slug: true } },
+      },
+    });
+
+    const accessToken = this.jwt.sign({
+      sub: user.id,
+      email: user.email,
+    });
+
+    return {
+      accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+      },
+      workspaces: workspaces.map((m) => ({
+        id: m.workspace.id,
+        name: m.workspace.name,
+        slug: m.workspace.slug,
+        role: m.role,
+      })),
+    };
+  }
+
+  /** Тестовий вхід: один логін/пароль, лише коли STAGING_MODE=true */
+  async stagingLogin(email: string, password: string) {
+    if (this.config.get<string>('STAGING_MODE') !== 'true') {
+      throw new UnauthorizedException('Staging login disabled');
+    }
+
+    const expectedEmail =
+      this.config.get<string>('STAGING_LOGIN_EMAIL') ?? 'test@cleartg.ua';
+    const expectedPassword =
+      this.config.get<string>('STAGING_LOGIN_PASSWORD') ?? 'cleartg123';
+
+    const normalized = email.trim().toLowerCase();
+    if (
+      normalized !== expectedEmail.trim().toLowerCase() ||
+      password !== expectedPassword
+    ) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    const user = await this.prisma.user.upsert({
+      where: { email: normalized },
+      create: { email: normalized, emailVerified: true, name: 'Test User' },
       update: { emailVerified: true },
     });
 

@@ -1,5 +1,6 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
+import { CreateTrackingLinkForm } from './CreateTrackingLinkForm';
 
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
 
@@ -23,8 +24,14 @@ const LINK_MODE_LABELS: Record<TrackingLink['linkMode'], string> = {
 
 export default async function LinksPage() {
   let links: TrackingLink[] = [];
+  let channels: Array<{ id: string; title: string }> = [];
+  let campaigns: Array<{ id: string; name: string }> = [];
   try {
-    links = await api<TrackingLink[]>('/api/tracking-links');
+    [links, channels, campaigns] = await Promise.all([
+      api<TrackingLink[]>('/api/tracking-links'),
+      api<Array<{ id: string; title: string }>>('/api/channels'),
+      api<Array<{ id: string; name: string }>>('/api/campaigns'),
+    ]);
   } catch { /* empty */ }
 
   return (
@@ -33,9 +40,10 @@ export default async function LinksPage() {
         title="Tracking Links"
         description="Landing page для paid traffic (Meta, Google, TikTok) або shortlink для organic/influencer"
       />
+      <CreateTrackingLinkForm channels={channels} campaigns={campaigns} />
       {links.length === 0 ? (
         <div className="bg-white rounded-xl border p-8 text-center text-slate-500">
-          <p>Створіть tracking link через API POST /api/tracking-links</p>
+          <p>Створіть перше tracking-посилання вище.</p>
         </div>
       ) : (
         <div className="space-y-3">
