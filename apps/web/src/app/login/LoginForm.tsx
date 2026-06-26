@@ -41,16 +41,24 @@ export default function LoginForm({
       };
 
       if (!res.ok) {
-        setError(data.error ?? 'Невірний email або пароль');
+        setError(
+          data.error ??
+            (res.status === 404 && localMode
+              ? 'Локальний логін недоступний. Зробіть redeploy після додавання LOCAL_LOGIN_* у Vercel.'
+              : 'Невірний email або пароль'),
+        );
         return;
       }
+
+      const next = searchParams.get('next');
+      const redirectTo = data.redirect ?? (next && next.startsWith('/') ? next : '/dashboard');
 
       if (localMode && data.email) {
         const { ensureState } = await import('@/lib/local-store');
         ensureState(data.email);
       }
 
-      router.push(data.redirect ?? '/dashboard');
+      router.push(redirectTo);
       router.refresh();
     } catch {
       setError(

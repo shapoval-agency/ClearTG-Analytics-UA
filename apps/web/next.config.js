@@ -1,9 +1,22 @@
+function isLocalMode() {
+  if (process.env.LOCAL_MODE === 'true') return true;
+  if (process.env.LOCAL_MODE === 'false') return false;
+  return Boolean(process.env.LOCAL_LOGIN_EMAIL && !process.env.API_INTERNAL_URL);
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  env: {
+    NEXT_PUBLIC_LOCAL_MODE: isLocalMode() ? 'true' : 'false',
+  },
   ...(process.env.DOCKER_BUILD === 'true' ? { output: 'standalone' } : {}),
   async rewrites() {
-    // Прокси на Railway API — один домен Vercel для кабинета, /l/, /r/ и /api/
+    // У локальному режимі НЕ проксувати /api на localhost — інакше логін ламається
+    if (isLocalMode()) {
+      return [];
+    }
+
     const api =
       process.env.API_INTERNAL_URL ??
       process.env.NEXT_PUBLIC_API_URL ??

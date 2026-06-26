@@ -1,9 +1,11 @@
-/** Тимчасовий режим: дані в браузері, без бекенду. LOCAL_MODE=true на Vercel. */
+/** Тимчасовий режим: дані в браузері, без бекенду. */
 export function isLocalMode(): boolean {
-  return process.env.LOCAL_MODE === 'true';
+  if (process.env.LOCAL_MODE === 'true') return true;
+  if (process.env.LOCAL_MODE === 'false') return false;
+  // Якщо задано логін, але немає бека — автоматично локальний режим
+  return Boolean(process.env.LOCAL_LOGIN_EMAIL && !process.env.API_INTERNAL_URL);
 }
 
-/** Для client components (потрібен NEXT_PUBLIC_LOCAL_MODE на Vercel). */
 export function isLocalModeClient(): boolean {
   return process.env.NEXT_PUBLIC_LOCAL_MODE === 'true';
 }
