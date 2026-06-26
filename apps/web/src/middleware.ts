@@ -6,6 +6,11 @@ const PUBLIC_PATHS = ['/login', '/auth/callback', '/privacy', '/terms', '/cookie
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // API routes (login, proxy) — без cookie; сторінки захищаємо нижче
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.next();
+  }
+
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     return NextResponse.next();
   }

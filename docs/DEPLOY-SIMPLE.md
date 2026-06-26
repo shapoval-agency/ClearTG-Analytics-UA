@@ -18,7 +18,12 @@
 
 **Не додавайте** `API_INTERNAL_URL`, якщо бека ще немає.
 
-Після зміни змінних → **Deployments → Redeploy** (обовʼязково).
+У Vercel достатньо **двох** змінних (як на скріншоті):
+
+- `LOCAL_LOGIN_EMAIL`
+- `LOCAL_LOGIN_PASSWORD`
+
+Обидві — для **Production** (і Preview за бажанням). Після зміни → **Redeploy**.
 
 ## Вхід
 
