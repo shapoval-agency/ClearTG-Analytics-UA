@@ -1,6 +1,8 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import { CreateTrackingLinkForm } from './CreateTrackingLinkForm';
+import { isLocalMode } from '@/lib/local-mode';
+import { LocalLinks } from '@/components/local/LocalLinks';
 
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
 
@@ -23,6 +25,8 @@ const LINK_MODE_LABELS: Record<TrackingLink['linkMode'], string> = {
 };
 
 export default async function LinksPage() {
+  if (isLocalMode()) return <LocalLinks />;
+
   let links: TrackingLink[] = [];
   let channels: Array<{ id: string; title: string }> = [];
   let campaigns: Array<{ id: string; name: string }> = [];

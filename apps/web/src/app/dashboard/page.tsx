@@ -2,12 +2,16 @@ import { api, DashboardOverview } from '@/lib/api';
 import { PageHeader, StatCard } from '@/components/ui';
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/session';
+import { isLocalMode } from '@/lib/local-mode';
+import { LocalDashboard } from '@/components/local/LocalDashboard';
 
 function pct(n: number) {
   return `${(n * 100).toFixed(1)}%`;
 }
 
 export default async function DashboardPage() {
+  if (isLocalMode()) return <LocalDashboard />;
+
   const session = await getSession();
   if (!session.workspaceId) redirect('/onboarding');
 

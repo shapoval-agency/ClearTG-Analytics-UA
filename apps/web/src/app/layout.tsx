@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AppShell } from '@/components/AppShell';
+import { LocalLayoutShell } from '@/components/LocalLayoutShell';
 import { getSession } from '@/lib/session';
 import { api, AuthMe } from '@/lib/api';
+import { getLocalCredentials, isLocalMode } from '@/lib/local-mode';
 
 export const metadata: Metadata = {
   title: 'ClearTG Analytics UA',
@@ -10,6 +12,17 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  if (isLocalMode()) {
+    const { email } = getLocalCredentials();
+    return (
+      <html lang="uk">
+        <body>
+          <LocalLayoutShell userEmail={email}>{children}</LocalLayoutShell>
+        </body>
+      </html>
+    );
+  }
+
   const session = await getSession();
   let me: AuthMe | null = null;
 

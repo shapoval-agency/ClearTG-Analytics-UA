@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { PageHeader } from '@/components/ui';
 import { saveMetaIntegrationAction, testMetaEventAction } from '@/lib/actions';
+import { isLocalModeClient } from '@/lib/local-mode';
+import { LocalMetaIntegration } from '@/components/local/LocalMetaIntegration';
 
-export default function MetaIntegrationPage() {
+function MetaApiIntegration() {
   const [pixelId, setPixelId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [testEventCode, setTestEventCode] = useState('');
@@ -53,4 +55,9 @@ export default function MetaIntegrationPage() {
       </div>
     </div>
   );
+}
+
+export default function MetaIntegrationPage() {
+  if (isLocalModeClient()) return <LocalMetaIntegration />;
+  return <MetaApiIntegration />;
 }

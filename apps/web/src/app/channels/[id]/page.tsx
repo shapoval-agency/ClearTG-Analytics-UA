@@ -1,5 +1,7 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
+import { isLocalMode } from '@/lib/local-mode';
+import { LocalChannelDetail } from '@/components/local/LocalChannelDetail';
 
 interface Channel {
   id: string;
@@ -12,6 +14,7 @@ interface Channel {
 
 export default async function ChannelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (isLocalMode()) return <LocalChannelDetail id={id} />;
   let channel: Channel | null = null;
   try {
     channel = await api<Channel>(`/api/channels/${id}`);

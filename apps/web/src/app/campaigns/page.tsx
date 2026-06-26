@@ -2,6 +2,8 @@ import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import Link from 'next/link';
 import { CreateCampaignForm } from './CreateCampaignForm';
+import { isLocalMode } from '@/lib/local-mode';
+import { LocalCampaigns } from '@/components/local/LocalCampaigns';
 
 interface Campaign {
   id: string;
@@ -19,6 +21,8 @@ interface CampaignReport {
 }
 
 export default async function CampaignsPage() {
+  if (isLocalMode()) return <LocalCampaigns />;
+
   let campaigns: Campaign[] = [];
   let reports: CampaignReport[] = [];
   let channels: Array<{ id: string; title: string }> = [];

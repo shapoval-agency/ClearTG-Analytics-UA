@@ -1,6 +1,8 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import Link from 'next/link';
+import { isLocalMode } from '@/lib/local-mode';
+import { LocalChannels } from '@/components/local/LocalChannels';
 
 interface Channel {
   id: string;
@@ -12,6 +14,8 @@ interface Channel {
 }
 
 export default async function ChannelsPage() {
+  if (isLocalMode()) return <LocalChannels />;
+
   const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? 'cleartg_bot';
 
   let channels: Channel[] = [];

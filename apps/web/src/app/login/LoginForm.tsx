@@ -3,11 +3,18 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { LocalInit } from '@/components/LocalInit';
 
-export default function LoginForm() {
+export default function LoginForm({
+  localMode,
+  defaultEmail,
+}: {
+  localMode: boolean;
+  defaultEmail: string;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(defaultEmail);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,8 +25,10 @@ export default function LoginForm() {
     setLoading(true);
     setError(null);
 
+    const endpoint = localMode ? '/api/local-login' : '/api/auth/staging-login';
+
     try {
-      const res = await fetch('/api/auth/staging-login', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -28,6 +37,7 @@ export default function LoginForm() {
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         redirect?: string;
+        email?: string;
       };
 
       if (!res.ok) {
@@ -35,10 +45,19 @@ export default function LoginForm() {
         return;
       }
 
+      if (localMode && data.email) {
+        const { ensureState } = await import('@/lib/local-store');
+        ensureState(data.email);
+      }
+
       router.push(data.redirect ?? '/dashboard');
       router.refresh();
     } catch {
-      setError('Немає зв\'язку з API. Перевірте Railway та API_INTERNAL_URL у Vercel.');
+      setError(
+        localMode
+          ? 'Помилка входу'
+          : 'Немає зв\'язку з API. Перевірте Railway та API_INTERNAL_URL у Vercel.',
+      );
     } finally {
       setLoading(false);
     }
@@ -46,9 +65,18 @@ export default function LoginForm() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+      {localMode && <LocalInit email={defaultEmail} />}
       <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
         <h1 className="text-2xl font-semibold text-slate-900">ClearTG Analytics</h1>
-        <p className="text-slate-500 mt-2 text-sm">Вхід для тестування</p>
+        <p className="text-slate-500 mt-2 text-sm">
+          {localMode ? 'Вхід (дані зберігаються у браузері)' : 'Вхід для тестування'}
+        </p>
+
+        {localMode && (
+          <div className="mt-4 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg">
+            Без Railway — налаштування збережуться тут, поки не підключите бекенд.
+          </div>
+        )}
 
         {error && (
           <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg">{error}</div>
@@ -70,7 +98,6 @@ export default function LoginForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
-              placeholder="you@agency.ua"
             />
           </div>
           <div>

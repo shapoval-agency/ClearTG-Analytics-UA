@@ -1,87 +1,64 @@
-# Тест для одного адміна: Vercel + Railway
+# Тільки Vercel (без Railway)
 
-Повноцінний продукт — реальна БД, бот, Meta, tracking-лінки. Один логін/пароль.
+Поки бекенд не підключений — **кабінет на Vercel**, дані **у браузері** (localStorage).  
+Один логін, без бази, без magic link, без Railway.
 
-## Архітектура
+## Vercel
 
-| Сервіс | Де | Що |
-|--------|-----|-----|
-| Кабінет | **Vercel** (`apps/web`) | UI, проксі `/api`, `/l/`, `/r/` на Railway |
-| API + бот | **Railway** (`Dockerfile.api`) | NestJS, Telegram webhook, tracking |
-| Postgres | Railway plugin | Дані |
-| Redis | Railway plugin | Черги |
+1. Repo → **Root Directory:** `apps/web`
+2. **Environment Variables:**
 
-## 1. Railway
+| Variable | Value |
+|----------|-------|
+| `LOCAL_MODE` | `true` |
+| `NEXT_PUBLIC_LOCAL_MODE` | `true` |
+| `NEXT_PUBLIC_APP_URL` | `https://ваш-проект.vercel.app` |
+| `LOCAL_LOGIN_EMAIL` | email адміна |
+| `LOCAL_LOGIN_PASSWORD` | пароль |
 
-1. New Project → Deploy from GitHub → репозиторій ClearTG
-2. Додайте **PostgreSQL** і **Redis**
-3. Сервіс API: Dockerfile `Dockerfile.api`, **Generate Domain** (напр. `https://xxx.up.railway.app`)
-4. Variables (Raw Editor — **References**, не текст "PostgreSQL"):
+**Нічого більше не потрібно** — без `API_INTERNAL_URL`, без Postgres.
 
-```
-DATABASE_URL          → ${{Postgres.DATABASE_URL}}
-REDIS_URL             → ${{Redis.REDIS_URL}}
-STAGING_MODE          = true
-NODE_ENV              = staging
-API_PORT              = 3001
-JWT_SECRET            = <openssl rand -hex 32>
-ENCRYPTION_KEY        = <openssl rand -hex 32>
-HASH_SALT             = <openssl rand -hex 32>
-STAGING_LOGIN_EMAIL   = boss@ваша-компанія.ua
-STAGING_LOGIN_PASSWORD = ваш-надійний-пароль
-NEXT_PUBLIC_APP_URL   = https://ваш-проект.vercel.app
-TELEGRAM_BOT_TOKEN    = <від @BotFather>
-TELEGRAM_BOT_USERNAME = ваш_бот
-TELEGRAM_WEBHOOK_SECRET = <random>
-TELEGRAM_WEBHOOK_URL  = https://xxx.up.railway.app/telegram/webhook
-```
+3. Deploy → `/login` → увійти.
 
-5. Після деплою перевірте: `https://xxx.up.railway.app/health`
+## Що працює зараз
 
-При старті API сам робить `db push` + seed (користувач + workspace).
+- Вхід (email + пароль)
+- Канали, кампанії, tracking-посилання — **зберігаються у вашому браузері**
+- Meta Pixel / Token — теж у браузері
+- URL для реклами: `https://ваш-vercel.vercel.app/l/xxxx` (збережеться, запрацює з беком)
 
-## 2. Vercel
+## Що запрацює після підключення бека
 
-1. Import repo, **Root Directory:** `apps/web`
-2. Environment Variables:
+- Кліки по `/l/` та `/r/`
+- Telegram-бот і підписки
+- Meta CAPI (тестові події)
+- Реальна аналітика в «Огляд»
 
-```
-API_INTERNAL_URL      = https://xxx.up.railway.app
-NEXT_PUBLIC_APP_URL   = https://ваш-проект.vercel.app
-NEXT_PUBLIC_API_URL   = https://ваш-проект.vercel.app
-NEXT_PUBLIC_TELEGRAM_BOT_USERNAME = ваш_бот
-```
+## Коли підключите бекенд
 
-`NEXT_PUBLIC_API_URL` = Vercel URL, бо `/l/` і `/api/` проксуються на Railway через rewrites.
+1. Підніміть API + Postgres (Railway, VPS, docker — як зручно)
+2. У Vercel:
+   - `LOCAL_MODE` → видалити або `false`
+   - `NEXT_PUBLIC_LOCAL_MODE` → видалити
+   - Додати `API_INTERNAL_URL` = URL вашого API
+   - `NEXT_PUBLIC_API_URL` = URL Vercel (проксі)
+3. На API: `STAGING_MODE=true`, ті самі `STAGING_LOGIN_EMAIL` / пароль
+4. Redeploy Vercel
 
-3. Deploy → відкрийте `/login`
-
-## 3. Вхід
-
-Email і пароль з `STAGING_LOGIN_EMAIL` / `STAGING_LOGIN_PASSWORD` на Railway.
-
-## 4. Перший тест (покроково)
-
-1. **Увійти** в кабінет на Vercel
-2. **Канали** → додати бота адміном у свій Telegram-канал → канал з'явиться в списку
-3. **Кампанії** → створити кампанію Meta
-4. **Посилання** → створити landing `/l/...` для Meta Ads
-5. **Meta** → ввести Pixel ID + Access Token → «Тестова подія»
-6. Вставити tracking URL у рекламу Meta, клікнути → підписатися на канал → перевірити **Огляд**
-
-Tracking URL виглядає так: `https://ваш-проект.vercel.app/l/xxxxxxxxxx`
-
-## 5. Telegram webhook
-
-Після зміни `TELEGRAM_WEBHOOK_URL` перезапустіть деплой Railway. Webhook реєструється при старті API (якщо є токен).
+Дані з localStorage доведеться один раз завести в кабінеті знову (або зробимо імпорт пізніше).
 
 ## Локально
 
-```bash
-docker compose up -d
-cp .env.example .env   # STAGING_MODE=true, TELEGRAM_BOT_TOKEN=...
-pnpm install && pnpm db:push && pnpm --filter @cleartg/database exec tsx prisma/seed.ts
-pnpm dev
+`apps/web/.env.local`:
+
+```
+LOCAL_MODE=true
+NEXT_PUBLIC_LOCAL_MODE=true
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+LOCAL_LOGIN_EMAIL=test@cleartg.ua
+LOCAL_LOGIN_PASSWORD=cleartg123
 ```
 
-Login: `test@cleartg.ua` / `cleartg123` (дефолт, якщо не задано STAGING_LOGIN_*)
+```bash
+pnpm --filter @cleartg/web dev
+```
