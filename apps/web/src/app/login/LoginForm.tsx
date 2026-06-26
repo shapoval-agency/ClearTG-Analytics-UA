@@ -8,9 +8,11 @@ import { LocalInit } from '@/components/LocalInit';
 export default function LoginForm({
   localMode,
   defaultEmail,
+  loginEmailHint,
 }: {
   localMode: boolean;
   defaultEmail: string;
+  loginEmailHint?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -36,16 +38,15 @@ export default function LoginForm({
 
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
+        hint?: string;
         redirect?: string;
         email?: string;
       };
 
       if (!res.ok) {
         setError(
-          data.error ??
-            (res.status === 404 && localMode
-              ? 'Локальний логін недоступний. Зробіть redeploy після додавання LOCAL_LOGIN_* у Vercel.'
-              : 'Невірний email або пароль'),
+          [data.error, (data as { hint?: string }).hint].filter(Boolean).join(' — ') ||
+            'Невірний email або пароль',
         );
         return;
       }
@@ -81,8 +82,13 @@ export default function LoginForm({
         </p>
 
         {localMode && (
-          <div className="mt-4 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg">
-            Без Railway — налаштування збережуться тут, поки не підключите бекенд.
+          <div className="mt-4 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg space-y-1">
+            <p>Без Railway — дані у браузері.</p>
+            {loginEmailHint && (
+              <p>
+                Email у Vercel: <strong>{loginEmailHint}</strong>
+              </p>
+            )}
           </div>
         )}
 

@@ -13,9 +13,26 @@ export function isLocalModeClient(): boolean {
 export const LOCAL_SESSION_TOKEN = 'local';
 export const LOCAL_WORKSPACE_ID = 'local-ws';
 
+/** Vercel часто додає пробіли/лапки в env — прибираємо. */
+function normalizeEnv(value: string | undefined): string {
+  if (!value) return '';
+  let v = value.trim();
+  if (
+    (v.startsWith('"') && v.endsWith('"')) ||
+    (v.startsWith("'") && v.endsWith("'"))
+  ) {
+    v = v.slice(1, -1).trim();
+  }
+  return v;
+}
+
 export function getLocalCredentials() {
   return {
-    email: process.env.LOCAL_LOGIN_EMAIL ?? 'test@cleartg.ua',
-    password: process.env.LOCAL_LOGIN_PASSWORD ?? 'cleartg123',
+    email: normalizeEnv(process.env.LOCAL_LOGIN_EMAIL) || 'test@cleartg.ua',
+    password: normalizeEnv(process.env.LOCAL_LOGIN_PASSWORD) || 'cleartg123',
   };
+}
+
+export function isLocalPasswordConfigured(): boolean {
+  return Boolean(normalizeEnv(process.env.LOCAL_LOGIN_PASSWORD));
 }
