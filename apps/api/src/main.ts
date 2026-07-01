@@ -1,3 +1,4 @@
+import './load-env';
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,
@@ -26,7 +27,7 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
+    origin: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3002',
     credentials: true,
   });
 

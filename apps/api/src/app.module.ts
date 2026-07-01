@@ -1,5 +1,7 @@
+import './load-env';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { join } from 'path';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './prisma/prisma.module';
 import { LoggerModule } from './common/logger.module';
@@ -18,11 +20,18 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { RetentionModule } from './retention/retention.module';
 import { LeadMagnetModule } from './lead-magnet/lead-magnet.module';
+import { AgencyModule } from './agency/agency.module';
 import { HealthController } from './health.controller';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: [
+        join(__dirname, '..', '.env'),
+        join(__dirname, '..', '..', '.env'),
+      ],
+    }),
     BullModule.forRoot({
       connection: {
         url: process.env.REDIS_URL ?? 'redis://localhost:6379',
@@ -45,6 +54,7 @@ import { HealthController } from './health.controller';
     AuthModule,
     RetentionModule,
     LeadMagnetModule,
+    AgencyModule,
   ],
   controllers: [HealthController],
 })

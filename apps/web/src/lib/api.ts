@@ -47,6 +47,7 @@ export class AuthError extends Error {
 export interface DashboardOverview {
   clicks: number;
   subscribers: number;
+  activeSubscribers: number;
   unsubscribes: number;
   clickToSubscribeRate: number;
   retention: { d1: number; d7: number; d30: number; total: number };
@@ -61,5 +62,24 @@ export interface DashboardOverview {
 
 export interface AuthMe {
   user: { id: string; email: string; name: string | null };
+  isAgencyAdmin?: boolean;
   workspaces: Array<{ id: string; name: string; slug: string; role: string }>;
+}
+
+export interface WorkspaceMember {
+  id: string;
+  userId: string;
+  email: string;
+  name: string | null;
+  role: string;
+}
+
+export interface AgencyClient {
+  id: string;
+  name: string;
+  slug: string;
+  ownerEmail: string | null;
+  channels: number;
+  subscribers: number;
+  createdAt: string;
 }

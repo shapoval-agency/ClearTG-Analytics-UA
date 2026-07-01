@@ -6,9 +6,11 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { WorkspaceGuard } from '../common/guards/workspace.guard';
+import { AgencyModule } from '../agency/agency.module';
 
 @Module({
   imports: [
+    AgencyModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

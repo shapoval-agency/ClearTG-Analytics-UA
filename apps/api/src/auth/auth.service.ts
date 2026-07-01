@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoggerService } from '../common/logger.service';
+import { AgencyService } from '../agency/agency.service';
 
 const MAGIC_LINK_TTL_MINUTES = 15;
 
@@ -14,6 +15,7 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private logger: LoggerService,
+    private agency: AgencyService,
   ) {}
 
   async requestMagicLink(email: string) {
@@ -91,6 +93,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
       },
+      isAgencyAdmin: this.agency.isAgencyAdmin(user.email),
       workspaces: workspaces.map((m) => ({
         id: m.workspace.id,
         name: m.workspace.name,
@@ -110,10 +113,14 @@ export class AuthService {
       this.config.get<string>('STAGING_LOGIN_EMAIL') ?? 'test@cleartg.ua';
     const expectedPassword =
       this.config.get<string>('STAGING_LOGIN_PASSWORD') ?? 'cleartg123';
+    const agencyEmail = this.agency.getAgencyAdminEmail();
 
     const normalized = email.trim().toLowerCase();
+    const allowedEmails = [expectedEmail.trim().toLowerCase()];
+    if (agencyEmail) allowedEmails.push(agencyEmail);
+
     if (
-      normalized !== expectedEmail.trim().toLowerCase() ||
+      !allowedEmails.includes(normalized) ||
       password !== expectedPassword
     ) {
       throw new UnauthorizedException('Invalid email or password');
@@ -144,6 +151,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
       },
+      isAgencyAdmin: this.agency.isAgencyAdmin(user.email),
       workspaces: workspaces.map((m) => ({
         id: m.workspace.id,
         name: m.workspace.name,
@@ -169,6 +177,7 @@ export class AuthService {
 
     return {
       user,
+      isAgencyAdmin: this.agency.isAgencyAdmin(user.email),
       workspaces: workspaces.map((m) => ({
         id: m.workspace.id,
         name: m.workspace.name,

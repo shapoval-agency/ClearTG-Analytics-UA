@@ -4,6 +4,13 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/session';
 import { isLocalMode } from '@/lib/local-mode';
 import { LocalDashboard } from '@/components/local/LocalDashboard';
+import Link from 'next/link';
+import {
+  attributionTypeLabel,
+  confidenceLabelUk,
+  formatDateUk,
+  sourceSummary,
+} from '@/lib/labels';
 
 function pct(n: number) {
   return `${(n * 100).toFixed(1)}%`;
@@ -16,8 +23,34 @@ export default async function DashboardPage() {
   if (!session.workspaceId) redirect('/onboarding');
 
   let data: DashboardOverview | null = null;
+  let recentSubscribers: Array<{
+    id: string;
+    subscribedAt: string;
+    channelTitle: string;
+    attributionType: string;
+    campaignName: string | null;
+    trackingLinkSlug: string | null;
+    confidenceScore: number;
+    utmSource: string | null;
+    utmCampaign: string | null;
+  }> = [];
+  let recentUnsubscribes: Array<{
+    id: string;
+    occurredAt: string;
+    channelTitle: string;
+    attributionType: string | null;
+    campaignName: string | null;
+    trackingLinkSlug: string | null;
+    utmSource: string | null;
+    utmCampaign: string | null;
+  }> = [];
+
   try {
-    data = await api<DashboardOverview>('/api/dashboard/overview');
+    [data, recentSubscribers, recentUnsubscribes] = await Promise.all([
+      api<DashboardOverview>('/api/dashboard/overview'),
+      api<typeof recentSubscribers>('/api/dashboard/subscribers').then((r) => r.slice(0, 5)),
+      api<typeof recentUnsubscribes>('/api/dashboard/unsubscribes').then((r) => r.slice(0, 5)),
+    ]);
   } catch {
     data = null;
   }
@@ -37,14 +70,10 @@ export default async function DashboardPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <StatCard label="Кліки" value={data.clicks} />
-            <StatCard label="Підписники" value={data.subscribers} />
+            <StatCard label="Підписників всього" value={data.subscribers} />
+            <StatCard label="У каналі зараз" value={data.activeSubscribers ?? data.subscribers} />
             <StatCard label="Відписки" value={data.unsubscribes} />
-            <StatCard
-              label="Click → Subscribe"
-              value={pct(data.clickToSubscribeRate)}
-              hint="Конверсія з кліку в підписку"
-            />
+            <StatCard label="Кліки (реклама)" value={data.clicks} hint="Якщо використовуєте /l/ посилання" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -68,8 +97,62 @@ export default async function DashboardPage() {
                 <div className="space-y-2">
                   {data.attributions.map((a) => (
                     <div key={a.type} className="flex justify-between text-sm">
-                      <span className="text-slate-600">{a.type}</span>
+                      <span className="text-slate-600">{attributionTypeLabel(a.type)}</span>
                       <span>{a.count} ({pct(a.share)}) · {a.confidenceLabel}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="font-semibold">Останні підписки</h2>
+                <Link href="/subscribers" className="text-sm text-brand-600 hover:underline">
+                  Усі →
+                </Link>
+              </div>
+              {recentSubscribers.length === 0 ? (
+                <p className="text-slate-400 text-sm">Ще немає підписок</p>
+              ) : (
+                <div className="space-y-3">
+                  {recentSubscribers.map((s) => (
+                    <div key={s.id} className="text-sm border-b border-slate-100 pb-2 last:border-0">
+                      <div className="flex justify-between">
+                        <span className="font-medium">{sourceSummary(s)}</span>
+                        <span className="text-slate-400">{formatDateUk(s.subscribedAt)}</span>
+                      </div>
+                      <p className="text-slate-500 text-xs mt-0.5">
+                        {s.channelTitle} · {attributionTypeLabel(s.attributionType)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="font-semibold">Останні відписки</h2>
+                <Link href="/subscribers" className="text-sm text-brand-600 hover:underline">
+                  Усі →
+                </Link>
+              </div>
+              {recentUnsubscribes.length === 0 ? (
+                <p className="text-slate-400 text-sm">Відписок немає</p>
+              ) : (
+                <div className="space-y-3">
+                  {recentUnsubscribes.map((u) => (
+                    <div key={u.id} className="text-sm border-b border-slate-100 pb-2 last:border-0">
+                      <div className="flex justify-between">
+                        <span className="font-medium">
+                          {u.attributionType ? sourceSummary(u) : 'Невідоме джерело'}
+                        </span>
+                        <span className="text-slate-400">{formatDateUk(u.occurredAt)}</span>
+                      </div>
+                      <p className="text-slate-500 text-xs mt-0.5">{u.channelTitle}</p>
                     </div>
                   ))}
                 </div>

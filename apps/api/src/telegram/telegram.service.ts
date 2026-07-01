@@ -1,4 +1,5 @@
-import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoggerService } from '../common/logger.service';
 import { AttributionService } from '../attribution/attribution.service';
@@ -11,12 +12,13 @@ import { Bot, webhookCallback } from 'grammy';
 import { MembershipEventType } from '@cleartg/database';
 
 @Injectable()
-export class TelegramService {
+export class TelegramService implements OnModuleInit {
   private bot: Bot | null = null;
 
   constructor(
     private prisma: PrismaService,
     private logger: LoggerService,
+    private config: ConfigService,
     private attribution: AttributionService,
     private conversion: ConversionService,
     private crypto: CryptoService,
@@ -24,16 +26,47 @@ export class TelegramService {
     private leadMagnet: LeadMagnetService,
     @Inject(forwardRef(() => InviteLinkService))
     private inviteLinks: InviteLinkService,
-  ) {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    if (token) {
-      this.bot = new Bot(token);
-      this.setupHandlers();
-    }
-  }
+  ) {}
 
   getBot() {
     return this.bot;
+  }
+
+  /** Ініціалізація бота + polling (staging) */
+  async onModuleInit() {
+    const token =
+      process.env.TELEGRAM_BOT_TOKEN?.trim() ||
+      this.config.get<string>('TELEGRAM_BOT_TOKEN')?.trim();
+    if (!token) {
+      this.logger.warn('TELEGRAM_BOT_TOKEN не задано — бот вимкнено', 'Telegram');
+      return;
+    }
+
+    this.bot = new Bot(token);
+    this.setupHandlers();
+
+    const staging = this.config.get<string>('STAGING_MODE') === 'true';
+    const usePolling = this.config.get<string>('TELEGRAM_USE_POLLING') !== 'false';
+    if (!staging || !usePolling) return;
+
+    try {
+      await this.bot.api.deleteWebhook({ drop_pending_updates: false });
+      void this.bot.start({
+        allowed_updates: ['message', 'my_chat_member', 'chat_member'],
+        onStart: () => {
+          this.logger.log('Telegram polling активний (staging)', 'Telegram');
+        },
+      });
+      this.logger.log(
+        'Режим polling: підписки/відписки в каналі фіксуються автоматично',
+        'Telegram',
+      );
+    } catch (err) {
+      this.logger.error(
+        `Не вдалося запустити polling: ${err instanceof Error ? err.message : err}`,
+        'Telegram',
+      );
+    }
   }
 
   private setupHandlers() {
@@ -121,9 +154,7 @@ export class TelegramService {
       });
 
       if (!existing && isAdmin && process.env.STAGING_MODE === 'true') {
-        const workspace = await this.prisma.workspace.findFirst({
-          orderBy: { createdAt: 'asc' },
-        });
+        const workspace = await this.resolveStagingWorkspace();
         if (workspace) {
           await this.prisma.channel.create({
             data: {
@@ -207,8 +238,16 @@ export class TelegramService {
         ctx.update.update_id,
         inviteUrl,
       );
+      this.logger.log(
+        `Підписка: user ${telegramUserId} на канал ${channel.title}`,
+        'Telegram',
+      );
     } else {
       await this.processUnsubscribe(channel.workspaceId, channel.id, telegramUserId);
+      this.logger.log(
+        `Відписка: user ${telegramUserId} з каналу ${channel.title}`,
+        'Telegram',
+      );
     }
   }
 
@@ -314,5 +353,65 @@ export class TelegramService {
     } catch {
       return false;
     }
+  }
+
+  /** Workspace тестового користувача (STAGING), не demo */
+  private async resolveStagingWorkspace() {
+    const stagingEmail = process.env.STAGING_LOGIN_EMAIL?.trim().toLowerCase();
+    if (stagingEmail) {
+      const user = await this.prisma.user.findUnique({ where: { email: stagingEmail } });
+      if (user) {
+        const member = await this.prisma.workspaceMember.findFirst({
+          where: { userId: user.id },
+          include: { workspace: true },
+          orderBy: { createdAt: 'asc' },
+        });
+        if (member) return member.workspace;
+      }
+    }
+    return this.prisma.workspace.findFirst({
+      where: { slug: 'main' },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /** Підтягнути канал, де бот уже адмін (якщо webhook пропустив подію) */
+  async syncChannelByIdentifier(workspaceId: string, rawInput: string) {
+    if (!this.bot) throw new Error('Telegram bot not configured');
+    const input = rawInput.trim();
+    if (!input) throw new Error('Channel username or chat id required');
+
+    const chat = /^-?\d+$/.test(input)
+      ? await this.bot.api.getChat(input)
+      : await this.bot.api.getChat(`@${input.replace(/^@/, '')}`);
+    if (chat.type !== 'channel') throw new Error('Not a channel');
+
+    const me = await this.bot.api.getMe();
+    const member = await this.bot.api.getChatMember(chat.id, me.id);
+    const isAdmin =
+      member.status === 'administrator' || member.status === 'creator';
+    if (!isAdmin) throw new Error('Bot is not admin in this channel');
+
+    const telegramChatId = String(chat.id);
+    const title = 'title' in chat ? (chat.title ?? 'Channel') : 'Channel';
+    const chatUsername = 'username' in chat ? (chat.username ?? null) : null;
+
+    return this.prisma.channel.upsert({
+      where: {
+        workspaceId_telegramChatId: { workspaceId, telegramChatId },
+      },
+      create: {
+        workspaceId,
+        telegramChatId,
+        title,
+        username: chatUsername,
+        botIsAdmin: true,
+      },
+      update: {
+        title,
+        username: chatUsername,
+        botIsAdmin: true,
+      },
+    });
   }
 }

@@ -30,4 +30,16 @@ export class DashboardController {
   trackingLinkReports(@WorkspaceId() workspaceId: string) {
     return this.dashboard.getTrackingLinkReports(workspaceId);
   }
+
+  @RequiresWorkspace()
+  @Get('subscribers')
+  subscriberFeed(@WorkspaceId() workspaceId: string) {
+    return this.dashboard.getSubscriberFeed(workspaceId);
+  }
+
+  @RequiresWorkspace()
+  @Get('unsubscribes')
+  unsubscribeFeed(@WorkspaceId() workspaceId: string) {
+    return this.dashboard.getUnsubscribeFeed(workspaceId);
+  }
 }

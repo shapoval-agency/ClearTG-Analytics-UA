@@ -4,7 +4,8 @@
   "private": true,
   "description": "ClearTG Analytics UA — honest Telegram ad analytics for Ukraine",
   "scripts": {
-    "dev": "pnpm run --parallel dev:api dev:web",
+    "dev": "pnpm --parallel --filter @cleartg/api --filter @cleartg/web dev",
+    "dev:tunnel": "node scripts/dev-tunnel.mjs",
     "dev:api": "pnpm --filter @cleartg/api dev",
     "dev:web": "pnpm --filter @cleartg/web dev",
     "build": "pnpm --filter @cleartg/web build",

@@ -170,3 +170,15 @@ export function attributeSubscription(input: AttributionInput): AttributionResul
     reason: 'Could not determine subscription source with sufficient data',
   };
 }
+
+const ATTRIBUTION_TYPE_LABELS: Record<AttributionType, string> = {
+  EXACT_CLICK_INVITE: 'Точне (invite з кліку)',
+  CAMPAIGN_INVITE: 'Кампанія (invite)',
+  PROBABILISTIC: 'Ймовірне (найближчий клік)',
+  ORGANIC: 'Органіка',
+  UNKNOWN: 'Невідомо',
+};
+
+export function attributionTypeLabel(type: AttributionType | string): string {
+  return ATTRIBUTION_TYPE_LABELS[type as AttributionType] ?? type;
+}

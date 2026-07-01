@@ -16,6 +16,11 @@ class CreateChannelDto {
   username?: string;
 }
 
+class SyncChannelDto {
+  @IsString()
+  username!: string;
+}
+
 @Controller('api/channels')
 export class ChannelController {
   constructor(private channel: ChannelService) {}
@@ -36,5 +41,11 @@ export class ChannelController {
   @Post()
   create(@Body() dto: CreateChannelDto, @WorkspaceId() workspaceId: string) {
     return this.channel.create(workspaceId, dto);
+  }
+
+  @RequiresWorkspace()
+  @Post('sync-telegram')
+  sync(@Body() dto: SyncChannelDto, @WorkspaceId() workspaceId: string) {
+    return this.channel.syncFromTelegram(workspaceId, dto.username);
   }
 }

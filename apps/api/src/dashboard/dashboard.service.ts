@@ -27,9 +27,14 @@ export class DashboardService {
 
     const retention = await this.getRetentionStats(workspaceId);
 
+    const activeSubscribers = await this.prisma.subscriberProfile.count({
+      where: { workspaceId, unsubscribeEvents: { none: {} } },
+    });
+
     return {
       clicks,
       subscribers,
+      activeSubscribers,
       unsubscribes,
       clickToSubscribeRate,
       retention,
@@ -124,15 +129,23 @@ export class DashboardService {
 
     return Promise.all(
       links.map(async (link) => {
-        const clicks = await this.prisma.clickEvent.count({
-          where: { trackingLinkId: link.id },
-        });
-        const subscribers = await this.prisma.attribution.count({
-          where: {
-            trackingLinkId: link.id,
-            membershipEvent: { eventType: MembershipEventType.SUBSCRIBE },
-          },
-        });
+        const [clicks, subscribers, unsubscribes] = await Promise.all([
+          this.prisma.clickEvent.count({ where: { trackingLinkId: link.id } }),
+          this.prisma.attribution.count({
+            where: {
+              trackingLinkId: link.id,
+              membershipEvent: { eventType: MembershipEventType.SUBSCRIBE },
+            },
+          }),
+          this.prisma.unsubscribeEvent.count({
+            where: {
+              channelId: link.channelId,
+              subscriberProfile: {
+                membershipEvent: { attribution: { trackingLinkId: link.id } },
+              },
+            },
+          }),
+        ]);
 
         return {
           id: link.id,
@@ -142,10 +155,122 @@ export class DashboardService {
           channelTitle: link.channel.title,
           clicks,
           subscribers,
+          unsubscribes,
           conversionRate: clicks > 0 ? subscribers / clicks : 0,
           autoRedirect: link.autoRedirect,
         };
       }),
     );
+  }
+
+  async getSubscriberFeed(workspaceId: string, limit = 100) {
+    const profiles = await this.prisma.subscriberProfile.findMany({
+      where: { workspaceId },
+      include: {
+        channel: { select: { title: true } },
+        membershipEvent: {
+          include: {
+            attribution: {
+              include: {
+                campaign: { select: { name: true } },
+                trackingLink: { select: { slug: true, name: true } },
+                clickEvent: {
+                  select: {
+                    utmSource: true,
+                    utmMedium: true,
+                    utmCampaign: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        _count: { select: { unsubscribeEvents: true } },
+      },
+      orderBy: { subscribedAt: 'desc' },
+      take: limit,
+    });
+
+    return profiles.map((p) => {
+      const attr = p.membershipEvent.attribution;
+      const hasAdSource =
+        attr &&
+        ['EXACT_CLICK_INVITE', 'CAMPAIGN_INVITE', 'PROBABILISTIC'].includes(attr.attributionType) &&
+        (attr.campaign?.name || attr.trackingLink?.slug);
+
+      let joinSource = 'Telegram (канал)';
+      if (hasAdSource) {
+        const parts = [attr.campaign?.name, attr.trackingLink?.slug ? `/${attr.trackingLink.slug}` : null].filter(Boolean);
+        joinSource = `Реклама: ${parts.join(' ')}`;
+      } else if (attr?.attributionType === 'ORGANIC') {
+        joinSource = 'Telegram (напряму)';
+      }
+
+      return {
+        id: p.id,
+        subscribedAt: p.subscribedAt,
+        channelTitle: p.channel.title,
+        telegramUserId: p.telegramUserId,
+        telegramUsername: p.membershipEvent.telegramUsername,
+        isActive: p._count.unsubscribeEvents === 0,
+        joinSource,
+        attributionType: attr?.attributionType ?? 'UNKNOWN',
+        campaignName: attr?.campaign?.name ?? null,
+        trackingLinkSlug: attr?.trackingLink?.slug ?? null,
+        trackingLinkName: attr?.trackingLink?.name ?? null,
+        confidenceScore: attr?.confidenceScore ?? 0,
+        utmSource: attr?.clickEvent?.utmSource ?? null,
+        utmCampaign: attr?.clickEvent?.utmCampaign ?? null,
+      };
+    });
+  }
+
+  async getUnsubscribeFeed(workspaceId: string, limit = 100) {
+    const events = await this.prisma.unsubscribeEvent.findMany({
+      where: { workspaceId },
+      include: {
+        channel: { select: { title: true } },
+        subscriberProfile: {
+          include: {
+            membershipEvent: {
+              include: {
+                attribution: {
+                  include: {
+                    campaign: { select: { name: true } },
+                    trackingLink: { select: { slug: true, name: true } },
+                    clickEvent: {
+                      select: {
+                        utmSource: true,
+                        utmMedium: true,
+                        utmCampaign: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { occurredAt: 'desc' },
+      take: limit,
+    });
+
+    return events.map((e) => {
+      const attr = e.subscriberProfile?.membershipEvent.attribution;
+      return {
+        id: e.id,
+        occurredAt: e.occurredAt,
+        channelTitle: e.channel.title,
+        telegramUsername: e.subscriberProfile?.membershipEvent.telegramUsername ?? null,
+        subscribedAt: e.subscriberProfile?.subscribedAt ?? null,
+        attributionType: attr?.attributionType ?? null,
+        campaignName: attr?.campaign?.name ?? null,
+        trackingLinkSlug: attr?.trackingLink?.slug ?? null,
+        trackingLinkName: attr?.trackingLink?.name ?? null,
+        utmSource: attr?.clickEvent?.utmSource ?? null,
+        utmCampaign: attr?.clickEvent?.utmCampaign ?? null,
+      };
+    });
   }
 }

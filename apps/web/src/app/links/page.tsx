@@ -44,7 +44,13 @@ export default async function LinksPage() {
         title="Tracking Links"
         description="Landing page для paid traffic (Meta, Google, TikTok) або shortlink для organic/influencer"
       />
-      <CreateTrackingLinkForm channels={channels} campaigns={campaigns} />
+          {APP_URL.includes('localhost') && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 text-sm text-amber-900">
+              <strong>localhost не працює для інших.</strong> Запустіть{' '}
+              <code className="text-xs bg-amber-100 px-1 rounded">pnpm dev:tunnel</code>
+              {' '}у другому терміналі — отримаєте публічний https://….loca.lt URL для посилань.
+            </div>
+          )}
       {links.length === 0 ? (
         <div className="bg-white rounded-xl border p-8 text-center text-slate-500">
           <p>Створіть перше tracking-посилання вище.</p>

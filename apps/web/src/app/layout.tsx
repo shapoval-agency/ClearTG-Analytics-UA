@@ -37,7 +37,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="uk">
       <body>
-        <AppShell me={me}>{children}</AppShell>
+        <AppShell me={me} activeWorkspaceId={session.workspaceId}>
+          {children}
+        </AppShell>
       </body>
     </html>
   );

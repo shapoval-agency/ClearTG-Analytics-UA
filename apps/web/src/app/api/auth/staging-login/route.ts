@@ -33,11 +33,16 @@ export async function POST(req: NextRequest) {
 
   const data = (await upstream.json()) as {
     accessToken: string;
+    isAgencyAdmin?: boolean;
     workspaces: Array<{ id: string }>;
   };
 
   const destination =
-    data.workspaces.length === 0 ? '/onboarding' : '/dashboard';
+    data.workspaces.length === 0
+      ? data.isAgencyAdmin
+        ? '/agency/clients'
+        : '/onboarding'
+      : '/dashboard';
 
   const response = NextResponse.json({ ok: true, redirect: destination });
   response.cookies.set(TOKEN_COOKIE, data.accessToken, SESSION_COOKIE_OPTIONS);

@@ -3,6 +3,7 @@ import { PageHeader } from '@/components/ui';
 import Link from 'next/link';
 import { isLocalMode } from '@/lib/local-mode';
 import { LocalChannels } from '@/components/local/LocalChannels';
+import { SyncChannelForm } from '@/components/SyncChannelForm';
 
 interface Channel {
   id: string;
@@ -19,9 +20,12 @@ export default async function ChannelsPage() {
   const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? 'cleartg_bot';
 
   let channels: Channel[] = [];
+  let loadError: string | null = null;
   try {
     channels = await api<Channel[]>('/api/channels');
-  } catch { /* empty */ }
+  } catch (e) {
+    loadError = e instanceof Error ? e.message : 'Помилка завантаження';
+  }
 
   return (
     <div>
@@ -37,18 +41,33 @@ export default async function ChannelsPage() {
         </ol>
       </div>
 
-      {channels.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-500">
-          <p>Ще немає каналів. Додайте бота адміністратором — він з&apos;явиться тут.</p>
+      {loadError && (
+        <div className="bg-red-50 border border-red-100 rounded-xl p-4 mb-6 text-sm text-red-800">
+          Не вдалося завантажити канали. Спробуйте{' '}
+          <a href="/login?next=/channels" className="underline font-medium">увійти знову</a>
+          {' '}(http://localhost:3002, не Vercel).
         </div>
+      )}
+
+      {channels.length === 0 ? (
+        <>
+          <SyncChannelForm />
+          <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-500">
+            <p>Ще немає каналів. Додайте бота адміністратором — він з&apos;явиться тут.</p>
+          </div>
+        </>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-4 mb-6">
           {channels.map((ch) => (
             <Link key={ch.id} href={`/channels/${ch.id}`} className="bg-white rounded-xl border border-slate-200 p-5 hover:border-brand-300 transition-colors block">
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-medium">{ch.title}</h3>
-                  {ch.username && <p className="text-sm text-slate-500">@{ch.username}</p>}
+                  {ch.username ? (
+                    <p className="text-sm text-slate-500">@{ch.username}</p>
+                  ) : (
+                    <p className="text-sm text-slate-400">приватний канал (без @username)</p>
+                  )}
                 </div>
                 <span className={`text-xs px-2 py-1 rounded ${ch.botIsAdmin ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                   {ch.botIsAdmin ? 'Бот адмін' : 'Потрібні права'}
@@ -61,6 +80,15 @@ export default async function ChannelsPage() {
             </Link>
           ))}
         </div>
+      )}
+
+      {channels.length > 0 && (
+        <details className="text-sm text-slate-500">
+          <summary className="cursor-pointer hover:text-slate-700">Додати інший канал вручну</summary>
+          <div className="mt-3">
+            <SyncChannelForm />
+          </div>
+        </details>
       )}
     </div>
   );

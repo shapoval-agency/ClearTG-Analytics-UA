@@ -7,6 +7,16 @@ import { getApiOrigin } from '@/lib/api-origin';
 
 const API_URL = getApiOrigin();
 
+async function tokenHeaders() {
+  const jar = await cookies();
+  const token = jar.get('cleartg_token')?.value;
+  if (!token) return null;
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  };
+}
+
 async function authHeaders() {
   const jar = await cookies();
   const token = jar.get('cleartg_token')?.value;
@@ -22,6 +32,59 @@ async function authHeaders() {
 export async function logoutAction() {
   await clearSession();
   redirect('/login');
+}
+
+export async function switchWorkspaceAction(workspaceId: string) {
+  const jar = await cookies();
+  const token = jar.get('cleartg_token')?.value;
+  if (!token) redirect('/login');
+
+  await setWorkspace(workspaceId);
+  redirect('/dashboard');
+}
+
+export async function createClientWorkspaceAction(data: {
+  name: string;
+  ownerEmail: string;
+}) {
+  const headers = await tokenHeaders();
+  if (!headers) return { error: 'Not authenticated' };
+
+  const res = await fetch(`${API_URL}/api/agency/clients`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return {
+      error:
+        (body as { message?: string }).message?.toString() ??
+        'Не вдалося створити клієнта',
+    };
+  }
+
+  const client = (await res.json()) as { id: string };
+  await setWorkspace(client.id);
+  redirect('/dashboard');
+}
+
+export async function inviteMemberAction(data: { email: string; role?: string }) {
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
+
+  const res = await fetch(`${API_URL}/api/workspaces/current/members`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    return { error: 'Не вдалося запросити учасника' };
+  }
+
+  return { ok: true };
 }
 
 export async function createWorkspaceAction(name: string) {

@@ -11,6 +11,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Tracking-посилання — публічні (підписник не логіниться в адмінку)
+  if (pathname.startsWith('/l/') || pathname.startsWith('/r/')) {
+    return NextResponse.next();
+  }
+
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     return NextResponse.next();
   }
@@ -29,6 +34,15 @@ export function middleware(request: NextRequest) {
     const login = new URL('/login', request.url);
     login.searchParams.set('next', pathname);
     return NextResponse.redirect(login);
+  }
+
+  // Agency panel — auth only, workspace cookie optional
+  if (pathname.startsWith('/agency')) {
+    const token = request.cookies.get('cleartg_token')?.value;
+    if (!token) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
+    return NextResponse.next();
   }
 
   const workspaceId = request.cookies.get('cleartg_workspace')?.value;

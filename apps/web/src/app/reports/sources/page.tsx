@@ -8,6 +8,7 @@ interface CampaignReport {
   channelTitle: string;
   clicks: number;
   subscribers: number;
+  unsubscribes: number;
   conversionRate: number;
 }
 
@@ -19,6 +20,7 @@ interface TrackingLinkReport {
   channelTitle: string;
   clicks: number;
   subscribers: number;
+  unsubscribes: number;
   conversionRate: number;
   autoRedirect: boolean;
 }
@@ -67,6 +69,7 @@ export default async function ReportsSourcesPage() {
                 <th className="p-4">Платформа</th>
                 <th className="p-4">Кліки</th>
                 <th className="p-4">Підписки</th>
+                <th className="p-4">Відписки</th>
                 <th className="p-4">CR</th>
               </tr>
             </thead>
@@ -77,6 +80,7 @@ export default async function ReportsSourcesPage() {
                   <td className="p-4">{c.adPlatform}</td>
                   <td className="p-4">{c.clicks}</td>
                   <td className="p-4">{c.subscribers}</td>
+                  <td className="p-4">{c.unsubscribes ?? 0}</td>
                   <td className="p-4">{pct(c.conversionRate)}</td>
                 </tr>
               ))}
@@ -97,6 +101,7 @@ export default async function ReportsSourcesPage() {
                 <th className="p-4">Кампанія</th>
                 <th className="p-4">Кліки</th>
                 <th className="p-4">Підписки</th>
+                <th className="p-4">Відписки</th>
                 <th className="p-4">CR</th>
                 <th className="p-4">Редирект</th>
               </tr>
@@ -111,6 +116,7 @@ export default async function ReportsSourcesPage() {
                   <td className="p-4">{l.campaignName ?? '—'}</td>
                   <td className="p-4">{l.clicks}</td>
                   <td className="p-4">{l.subscribers}</td>
+                  <td className="p-4">{l.unsubscribes ?? 0}</td>
                   <td className="p-4">{pct(l.conversionRate)}</td>
                   <td className="p-4">{l.autoRedirect ? 'так' : 'кнопка'}</td>
                 </tr>
