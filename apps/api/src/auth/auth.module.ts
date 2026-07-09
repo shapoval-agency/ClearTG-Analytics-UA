@@ -7,10 +7,12 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { WorkspaceGuard } from '../common/guards/workspace.guard';
 import { AgencyModule } from '../agency/agency.module';
+import { TelegramModule } from '../telegram/telegram.module';
 
 @Module({
   imports: [
     AgencyModule,
+    TelegramModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

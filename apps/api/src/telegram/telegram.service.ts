@@ -7,6 +7,7 @@ import { ConversionService } from '../conversion/conversion.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { LeadMagnetService } from '../lead-magnet/lead-magnet.service';
 import { InviteLinkService } from './invite-link.service';
+import { BotAdminService } from './bot-admin.service';
 import { hashExternalId } from '@cleartg/shared';
 import { Bot, webhookCallback } from 'grammy';
 import { MembershipEventType } from '@cleartg/database';
@@ -26,6 +27,7 @@ export class TelegramService implements OnModuleInit {
     private leadMagnet: LeadMagnetService,
     @Inject(forwardRef(() => InviteLinkService))
     private inviteLinks: InviteLinkService,
+    private botAdmin: BotAdminService,
   ) {}
 
   getBot() {
@@ -52,7 +54,7 @@ export class TelegramService implements OnModuleInit {
     try {
       await this.bot.api.deleteWebhook({ drop_pending_updates: false });
       void this.bot.start({
-        allowed_updates: ['message', 'my_chat_member', 'chat_member'],
+        allowed_updates: ['message', 'my_chat_member', 'chat_member', 'callback_query'],
         onStart: () => {
           this.logger.log('Telegram polling активний (staging)', 'Telegram');
         },
@@ -86,37 +88,82 @@ export class TelegramService implements OnModuleInit {
         return;
       }
 
-      if (payload.startsWith('owner_')) {
-        await ctx.reply(
-          'Вітаємо в ClearTG Analytics UA!\n\n' +
-            'Цей бот допомагає відстежувати джерела підписок на ваш Telegram-канал.\n\n' +
-            'Щоб підключити канал:\n' +
-            '1. Додайте бота адміністратором каналу\n' +
-            '2. Надайте права на перегляд учасників\n' +
-            '3. Поверніться до панелі керування ClearTG',
+      if (payload.startsWith('bind_')) {
+        const token = payload.replace('bind_', '');
+        const result = await this.botAdmin.bindTelegramAccount(
+          token,
+          userId,
+          ctx.from?.username,
         );
+        if (!result.ok) {
+          await ctx.reply(result.message);
+          return;
+        }
+        await ctx.reply(
+          '✅ Telegram привʼязано до кабінету ClearTG!\n\n' +
+            'Тепер ви будете отримувати щоденні звіти та зможете дивитись досьє підписників.',
+        );
+        await this.botAdmin.sendWelcomeMenu(ctx, true);
         return;
       }
 
-      await ctx.reply(
-        'Вітаємо! Ви запустили бота ClearTG Analytics.\n\n' +
-          'Ми не надсилаємо повідомлення без вашої згоди.\n' +
-          'Щоб відписатися від бота, надішліть /stop',
-      );
+      const linked = Boolean(await this.botAdmin.getLinkedUser(userId));
+      await this.botAdmin.sendWelcomeMenu(ctx, linked);
 
       await this.prisma.subscriberProfile.updateMany({
         where: { telegramUserId: userId },
         data: { botStarted: true, botOptedOut: false },
       });
+    });
 
-      await this.prisma.auditLog.create({
-        data: {
-          action: 'bot_started',
-          entityType: 'telegram_user',
-          entityId: userId,
-          metadata: { username: ctx.from?.username },
-        },
+    this.bot.command('menu', async (ctx) => {
+      const userId = String(ctx.from?.id ?? '');
+      const linked = Boolean(await this.botAdmin.getLinkedUser(userId));
+      await this.botAdmin.sendWelcomeMenu(ctx, linked);
+    });
+
+    this.bot.command('help', async (ctx) => {
+      const userId = String(ctx.from?.id ?? '');
+      await ctx.reply(this.botAdmin.helpText(), {
+        reply_markup: (await this.botAdmin.getLinkedUser(userId))
+          ? this.botAdmin.mainMenuKeyboard()
+          : undefined,
       });
+    });
+
+    this.bot.command('report', async (ctx) => {
+      await this.botAdmin.sendReportToChat(ctx, String(ctx.from?.id ?? ''), 'yesterday');
+    });
+
+    this.bot.command('channels', async (ctx) => {
+      await this.botAdmin.sendChannelsList(ctx, String(ctx.from?.id ?? ''));
+    });
+
+    this.bot.command('cabinet', async (ctx) => {
+      const url = (
+        process.env.NEXT_PUBLIC_APP_URL ??
+        process.env.API_URL ??
+        'http://localhost:3002'
+      ).replace(/\/$/, '');
+      await ctx.reply(`🖥 Кабінет ClearTG:\n${url}/dashboard`);
+    });
+
+    this.bot.callbackQuery(/^menu:/, async (ctx) => {
+      const action = ctx.callbackQuery.data?.replace('menu:', '') ?? '';
+      const userId = String(ctx.from?.id ?? '');
+      await ctx.answerCallbackQuery();
+
+      if (action === 'report_yesterday') {
+        await this.botAdmin.sendReportToChat(ctx, userId, 'yesterday');
+      } else if (action === 'report_24h') {
+        await this.botAdmin.sendReportToChat(ctx, userId, '24h');
+      } else if (action === 'channels') {
+        await this.botAdmin.sendChannelsList(ctx, userId);
+      } else if (action === 'help') {
+        await ctx.reply(this.botAdmin.helpText(), {
+          reply_markup: this.botAdmin.mainMenuKeyboard(),
+        });
+      }
     });
 
     this.bot.command('stop', async (ctx) => {
@@ -134,9 +181,42 @@ export class TelegramService implements OnModuleInit {
 
     this.bot.on('message:text', async (ctx) => {
       const userId = String(ctx.from?.id ?? '');
-      const result = await this.leadMagnet.handleConsentMessage(userId, ctx.message.text);
-      if (result) {
-        await ctx.reply(result.text);
+      const text = ctx.message.text;
+
+      const lm = await this.leadMagnet.handleConsentMessage(userId, text);
+      if (lm) {
+        await ctx.reply(lm.text);
+        return;
+      }
+
+      const linked = await this.botAdmin.getLinkedUser(userId);
+      if (!linked) return;
+
+      const usernameMatch = text.match(/@([a-zA-Z0-9_]{4,})/);
+      if (usernameMatch) {
+        const dossier = await this.botAdmin.lookupDossier(userId, usernameMatch[1]);
+        if (dossier) {
+          await ctx.reply(dossier, { reply_markup: this.botAdmin.mainMenuKeyboard() });
+        } else {
+          await ctx.reply('Підписника не знайдено у ваших каналах.');
+        }
+        return;
+      }
+
+      const forwardId =
+        ctx.message.forward_origin &&
+        'sender_user' in ctx.message.forward_origin &&
+        ctx.message.forward_origin.sender_user
+          ? String(ctx.message.forward_origin.sender_user.id)
+          : null;
+
+      if (forwardId) {
+        const dossier = await this.botAdmin.lookupDossier(userId, undefined, forwardId);
+        if (dossier) {
+          await ctx.reply(dossier, { reply_markup: this.botAdmin.mainMenuKeyboard() });
+        } else {
+          await ctx.reply('Підписника не знайдено.');
+        }
       }
     });
 
@@ -148,24 +228,29 @@ export class TelegramService implements OnModuleInit {
       const isAdmin = newStatus === 'administrator';
       const telegramChatId = String(chat.id);
       const username = 'username' in chat ? chat.username ?? null : null;
+      const title = chat.title ?? 'Channel';
+      const fromId = ctx.from?.id ? String(ctx.from.id) : undefined;
 
       const existing = await this.prisma.channel.findFirst({
         where: { telegramChatId },
       });
 
-      if (!existing && isAdmin && process.env.STAGING_MODE === 'true') {
-        const workspace = await this.resolveStagingWorkspace();
-        if (workspace) {
+      if (!existing && isAdmin) {
+        const workspaceId = await this.botAdmin.resolveWorkspaceForChannelRegistration(fromId);
+        if (workspaceId) {
           await this.prisma.channel.create({
             data: {
-              workspaceId: workspace.id,
+              workspaceId,
               telegramChatId,
-              title: chat.title ?? 'Channel',
+              title,
               username,
               botIsAdmin: true,
             },
           });
-          this.logger.log(`Auto-registered channel ${telegramChatId} for workspace ${workspace.id}`, 'Telegram');
+          this.logger.log(`Auto-registered channel ${telegramChatId}`, 'Telegram');
+          if (fromId) {
+            await this.botAdmin.notifyChannelConnected(fromId, title, this.bot!);
+          }
         }
       }
 
@@ -352,6 +437,57 @@ export class TelegramService implements OnModuleInit {
       return member.status === 'administrator' || member.status === 'creator';
     } catch {
       return false;
+    }
+  }
+
+  async getBotPermissions(chatId: string) {
+    if (!this.bot) {
+      return {
+        isAdmin: false,
+        canInviteUsers: false,
+        canManageChat: false,
+        issues: ['Бот не налаштований (TELEGRAM_BOT_TOKEN)'],
+        ready: false,
+      };
+    }
+
+    try {
+      const me = await this.bot.api.getMe();
+      const member = await this.bot.api.getChatMember(chatId, me.id);
+      const isAdmin =
+        member.status === 'administrator' || member.status === 'creator';
+      const canInviteUsers =
+        isAdmin &&
+        member.status === 'administrator' &&
+        'can_invite_users' in member &&
+        member.can_invite_users === true;
+      const canManageChat =
+        isAdmin &&
+        member.status === 'administrator' &&
+        'can_manage_chat' in member &&
+        member.can_manage_chat === true;
+
+      const issues: string[] = [];
+      if (!isAdmin) issues.push('Додайте бота адміністратором каналу');
+      if (isAdmin && !canInviteUsers) {
+        issues.push('Увімкніть право «Додавання учасників» для точних invite-лінків');
+      }
+
+      return {
+        isAdmin,
+        canInviteUsers: Boolean(canInviteUsers),
+        canManageChat: Boolean(canManageChat),
+        issues,
+        ready: isAdmin,
+      };
+    } catch {
+      return {
+        isAdmin: false,
+        canInviteUsers: false,
+        canManageChat: false,
+        issues: ['Канал не знайдено або бот не має доступу'],
+        ready: false,
+      };
     }
   }
 

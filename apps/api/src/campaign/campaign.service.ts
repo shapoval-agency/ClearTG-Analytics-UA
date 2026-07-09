@@ -18,6 +18,7 @@ export class CampaignService {
       spendModel?: SpendModel;
       spendAmount?: number;
       attributionWindowMinutes?: number;
+      conversionDelayMinutes?: number;
       targetEvent?: TargetEvent;
     },
   ) {

@@ -6,6 +6,8 @@ export interface LandingPageContext {
   telegramUrl: string;
   privacyPolicyUrl: string;
   linkMode: 'LANDING_PAGE' | 'SHORTLINK';
+  clickId?: string;
+  apiOrigin?: string;
 }
 
 function baseStyles() {
@@ -76,6 +78,19 @@ function baseStyles() {
   `;
 }
 
+function openTelegramScript(ctx: LandingPageContext): string {
+  if (!ctx.clickId || !ctx.apiOrigin) return '';
+  const api = escapeHtml(ctx.apiOrigin.replace(/\/$/, ''));
+  const clickId = escapeHtml(ctx.clickId);
+  return `<script>
+(function(){
+  var api='${api}', clickId='${clickId}';
+  function ping(){ try { navigator.sendBeacon(api+'/api/tracking/open/'+clickId); } catch(e) {} }
+  document.querySelectorAll('a.cta').forEach(function(a){ a.addEventListener('click', ping); });
+})();
+</script>`;
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -115,6 +130,7 @@ export function renderRedirectPage(ctx: LandingPageContext, delaySeconds: number
     <a class="cta" href="${telegramUrl}" rel="noopener noreferrer">Перейти до Telegram</a>
     <div class="footer"><a href="${privacyUrl}">Політика конфіденційності</a></div>
   </div>
+  ${openTelegramScript(ctx)}
 </body>
 </html>`;
 }
@@ -172,6 +188,7 @@ export function renderLandingPage(ctx: LandingPageContext): string {
       · ClearTG Analytics UA
     </div>
   </div>
+  ${openTelegramScript(ctx)}
 </body>
 </html>`;
 }
@@ -206,6 +223,7 @@ export function renderShortlinkPage(ctx: LandingPageContext): string {
       <a href="${privacyUrl}">Політика конфіденційності</a>
     </div>
   </div>
+  ${openTelegramScript(ctx)}
 </body>
 </html>`;
 }

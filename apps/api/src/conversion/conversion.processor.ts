@@ -31,6 +31,31 @@ export class ConversionDeliveryProcessor extends WorkerHost {
     });
     if (!event) return;
 
+    if (event.eventName === 'TG_Subscribe' && event.subscriberProfileId && event.campaignId) {
+      const campaign = await this.prisma.campaign.findUnique({
+        where: { id: event.campaignId },
+        select: { conversionDelayMinutes: true },
+      });
+      const delayMin = campaign?.conversionDelayMinutes ?? 0;
+      if (delayMin > 0) {
+        const quickUnsub = await this.prisma.unsubscribeEvent.findFirst({
+          where: {
+            subscriberProfileId: event.subscriberProfileId,
+            occurredAt: {
+              lte: new Date(event.eventTime.getTime() + delayMin * 60 * 1000),
+            },
+          },
+        });
+        if (quickUnsub) {
+          await this.prisma.conversionEvent.update({
+            where: { id: event.id },
+            data: { status: ConversionEventStatus.SKIPPED_POLICY_RESTRICTION },
+          });
+          return;
+        }
+      }
+    }
+
     const consent = event.consentSnapshot as unknown as ConsentSnapshot;
     const eligibility = event.eligibilityFlags as Record<string, { eligible: boolean }>;
     const click = event.attribution?.clickEvent;

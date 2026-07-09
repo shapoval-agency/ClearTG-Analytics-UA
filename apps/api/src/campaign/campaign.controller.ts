@@ -19,6 +19,7 @@ class CreateCampaignDto {
   @IsOptional() @IsEnum(SpendModel) spendModel?: SpendModel;
   @IsOptional() @IsNumber() spendAmount?: number;
   @IsOptional() @IsNumber() attributionWindowMinutes?: number;
+  @IsOptional() @IsNumber() conversionDelayMinutes?: number;
   @IsOptional() @IsEnum(TargetEvent) targetEvent?: TargetEvent;
 }
 

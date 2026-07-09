@@ -1,6 +1,7 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import { CreateTrackingLinkForm } from './CreateTrackingLinkForm';
+import { EmbedSnippet } from '@/components/EmbedSnippet';
 import { isLocalMode } from '@/lib/local-mode';
 import { LocalLinks } from '@/components/local/LocalLinks';
 
@@ -75,6 +76,7 @@ export default async function LinksPage() {
                 <span>{l._count.clickEvents} кліків</span>
                 <span>{l.destinationMode}</span>
               </div>
+              <EmbedSnippet slug={l.slug} />
             </div>
           ))}
         </div>

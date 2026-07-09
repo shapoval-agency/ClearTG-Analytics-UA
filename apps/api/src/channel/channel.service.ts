@@ -47,11 +47,10 @@ export class ChannelService {
   }
 
   async syncFromTelegram(workspaceId: string, username: string) {
-    if (process.env.STAGING_MODE !== 'true') {
-      throw new BadRequestException('Sync only available in staging mode');
-    }
     try {
-      return await this.telegram.syncChannelByIdentifier(workspaceId, username);
+      const channel = await this.telegram.syncChannelByIdentifier(workspaceId, username);
+      const status = await this.telegram.getBotPermissions(channel.telegramChatId);
+      return { ...channel, botPermissions: status };
     } catch (err) {
       const raw = err instanceof Error ? err.message : 'Sync failed';
       if (/chat not found/i.test(raw)) {
@@ -64,5 +63,21 @@ export class ChannelService {
       }
       throw new BadRequestException(raw);
     }
+  }
+
+  async getBotStatus(channelId: string, workspaceId: string) {
+    const channel = await this.prisma.channel.findFirst({
+      where: { id: channelId, workspaceId },
+    });
+    if (!channel) throw new BadRequestException('Channel not found');
+
+    const permissions = await this.telegram.getBotPermissions(channel.telegramChatId);
+    if (permissions.isAdmin !== channel.botIsAdmin) {
+      await this.prisma.channel.update({
+        where: { id: channel.id },
+        data: { botIsAdmin: permissions.isAdmin },
+      });
+    }
+    return { channelId: channel.id, title: channel.title, ...permissions };
   }
 }

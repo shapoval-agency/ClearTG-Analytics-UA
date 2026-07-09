@@ -5,6 +5,7 @@ import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoggerService } from '../common/logger.service';
 import { AgencyService } from '../agency/agency.service';
+import { BotAdminService } from '../telegram/bot-admin.service';
 
 const MAGIC_LINK_TTL_MINUTES = 15;
 
@@ -16,6 +17,7 @@ export class AuthService {
     private config: ConfigService,
     private logger: LoggerService,
     private agency: AgencyService,
+    private botAdmin: BotAdminService,
   ) {}
 
   async requestMagicLink(email: string) {
@@ -159,6 +161,10 @@ export class AuthService {
         role: m.role,
       })),
     };
+  }
+
+  async createTelegramBindLink(userId: string) {
+    return this.botAdmin.createBindToken(userId);
   }
 
   async getMe(userId: string) {

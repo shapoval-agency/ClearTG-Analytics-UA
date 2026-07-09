@@ -55,4 +55,9 @@ export class AuthController {
   me(@CurrentUser() user: { id: string }) {
     return this.auth.getMe(user.id);
   }
+
+  @Get('telegram-bind-link')
+  telegramBindLink(@CurrentUser() user: { id: string }) {
+    return this.auth.createTelegramBindLink(user.id);
+  }
 }

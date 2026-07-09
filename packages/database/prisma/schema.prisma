@@ -190,6 +190,7 @@ model Campaign {
   spendAmount             Decimal?    @map("spend_amount") @db.Decimal(12, 2)
   spendCurrency           String      @default("UAH") @map("spend_currency")
   attributionWindowMinutes Int        @default(10080) @map("attribution_window_minutes") // 7 days
+  conversionDelayMinutes   Int        @default(0) @map("conversion_delay_minutes")
   targetEvent             TargetEvent @default(SUBSCRIBE) @map("target_event")
   isActive                Boolean     @default(true) @map("is_active")
   createdAt               DateTime    @default(now()) @map("created_at")
@@ -227,6 +228,8 @@ model TrackingLink {
   utmCampaign      String?         @map("utm_campaign")
   utmContent       String?         @map("utm_content")
   utmTerm          String?         @map("utm_term")
+  postNumber       Int?            @map("post_number")
+  creativeTag      String?         @map("creative_tag")
   isActive         Boolean         @default(true) @map("is_active")
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
@@ -278,6 +281,7 @@ model ClickEvent {
   os              String?
   geoCountry      String?  @map("geo_country")
   geoRegion       String?  @map("geo_region")
+  telegramOpenedAt DateTime? @map("telegram_opened_at")
 
   // Consent snapshot at click time
   consentSnapshot Json     @map("consent_snapshot")

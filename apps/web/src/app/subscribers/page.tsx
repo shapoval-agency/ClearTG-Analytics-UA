@@ -1,6 +1,7 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import { formatDateUk } from '@/lib/labels';
+import Link from 'next/link';
 
 interface Member {
   id: string;
@@ -31,7 +32,14 @@ export default async function SubscribersPage() {
       <PageHeader
         title="Учасники каналу"
         description="Хто підписався або кого ви додали в Telegram. Без tracking-посилань — бот фіксує події сам."
-      />
+      >
+        <a
+          href="/api/dashboard/subscribers/export.csv"
+          className="text-sm text-brand-600 hover:underline"
+        >
+          Експорт CSV
+        </a>
+      </PageHeader>
 
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 mb-6 text-sm text-blue-900">
         <p className="font-medium mb-2">Як це працює</p>
@@ -88,11 +96,13 @@ export default async function SubscribersPage() {
                   <td className="p-4 whitespace-nowrap">{formatDateUk(m.subscribedAt)}</td>
                   <td className="p-4">{m.channelTitle}</td>
                   <td className="p-4">
-                    {m.telegramUsername ? (
-                      <span>@{m.telegramUsername}</span>
-                    ) : (
-                      <span className="text-slate-500 font-mono text-xs">id:{m.telegramUserId}</span>
-                    )}
+                    <Link href={`/subscribers/${m.id}`} className="text-brand-600 hover:underline">
+                      {m.telegramUsername ? (
+                        <span>@{m.telegramUsername}</span>
+                      ) : (
+                        <span className="text-slate-500 font-mono text-xs">id:{m.telegramUserId}</span>
+                      )}
+                    </Link>
                   </td>
                   <td className="p-4">{m.joinSource}</td>
                   <td className="p-4">

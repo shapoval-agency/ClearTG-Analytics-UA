@@ -79,6 +79,8 @@ export class TrackingService {
         utmCampaign: dto.utmCampaign,
         utmContent: dto.utmContent,
         utmTerm: dto.utmTerm,
+        postNumber: dto.postNumber,
+        creativeTag: dto.creativeTag,
       },
       include: {
         channel: { select: { title: true } },
@@ -190,7 +192,11 @@ export class TrackingService {
     });
 
     const telegramUrl = await this.resolveDestination(link, clickEvent.id);
-    const pageContext = this.buildPageContext(link, telegramUrl);
+    const apiOrigin =
+      process.env.NEXT_PUBLIC_APP_URL ??
+      process.env.API_URL ??
+      'http://localhost:3001';
+    const pageContext = this.buildPageContext(link, telegramUrl, clickEvent.id, apiOrigin);
 
     return {
       clickEvent,
@@ -211,6 +217,8 @@ export class TrackingService {
       workspace: { privacyPolicyUrl: string | null };
     },
     telegramUrl: string,
+    clickId?: string,
+    apiOrigin?: string,
   ): LandingPageContext {
     const defaultDescription =
       'Зараз відкриється Telegram-канал. Підписка відбувається вручну — ми не додаємо вас автоматично.';
@@ -223,6 +231,49 @@ export class TrackingService {
       telegramUrl,
       privacyPolicyUrl: link.workspace.privacyPolicyUrl ?? '/privacy',
       linkMode: link.linkMode as 'LANDING_PAGE' | 'SHORTLINK',
+      clickId,
+      apiOrigin,
+    };
+  }
+
+  async recordTelegramOpen(clickId: string) {
+    const click = await this.prisma.clickEvent.findUnique({
+      where: { id: clickId },
+      include: { trackingLink: true, campaign: true },
+    });
+    if (!click || click.telegramOpenedAt) return { ok: true, duplicate: true };
+
+    await this.prisma.clickEvent.update({
+      where: { id: clickId },
+      data: { telegramOpenedAt: new Date() },
+    });
+
+    return { ok: true };
+  }
+
+  getEmbedScript() {
+    return `(function(){var s=document.currentScript;var slug=s&&s.getAttribute("data-slug");var app=(s&&s.getAttribute("data-app-url"))||"";if(!slug||!app)return;function bind(){document.querySelectorAll('a[href*="t.me/"]').forEach(function(a){if(a.dataset.ctg)return;a.dataset.ctg="1";a.addEventListener("click",function(e){e.preventDefault();var q=new URLSearchParams(location.search);var u=app.replace(/\\/$/,"")+"/l/"+slug+(q.toString()?"?"+q:"");location.href=u;});});}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bind);else bind();})();`;
+  }
+
+  async getEmbedSnippet(workspaceId: string, slug: string) {
+    const link = await this.prisma.trackingLink.findFirst({
+      where: { workspaceId, slug, isActive: true },
+      include: { channel: { select: { title: true } } },
+    });
+    if (!link) throw new NotFoundException('Tracking link not found');
+
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL ??
+      process.env.API_URL ??
+      'http://localhost:3002';
+
+    return {
+      slug: link.slug,
+      channelTitle: link.channel.title,
+      appUrl,
+      scriptTag: `<script src="${appUrl}/cleartg.js" data-slug="${link.slug}" data-app-url="${appUrl}" defer></script>`,
+      directLink: `${appUrl}/l/${link.slug}`,
+      hint: 'Вставте скрипт перед </body> на Tilda, Taplink, WordPress або іншому лендингу. Посилання t.me/ будуть вести через tracking.',
     };
   }
 

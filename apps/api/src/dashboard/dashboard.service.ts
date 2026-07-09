@@ -273,4 +273,157 @@ export class DashboardService {
       };
     });
   }
+
+  async getSubscriberDossier(workspaceId: string, profileId: string) {
+    const profile = await this.prisma.subscriberProfile.findFirst({
+      where: { id: profileId, workspaceId },
+      include: {
+        channel: { select: { id: true, title: true, username: true } },
+        membershipEvent: {
+          include: {
+            attribution: {
+              include: {
+                campaign: true,
+                trackingLink: true,
+                clickEvent: true,
+              },
+            },
+          },
+        },
+        unsubscribeEvents: { orderBy: { occurredAt: 'desc' } },
+        leadMagnetClaims: {
+          include: { leadMagnet: { select: { name: true, slug: true } } },
+          orderBy: { claimedAt: 'desc' },
+        },
+        conversionEvents: {
+          orderBy: { eventTime: 'desc' },
+          take: 20,
+        },
+      },
+    });
+    if (!profile) return null;
+
+    const attr = profile.membershipEvent.attribution;
+    const daysInChannel = profile.unsubscribeEvents[0]
+      ? Math.floor(
+          (profile.unsubscribeEvents[0].occurredAt.getTime() - profile.subscribedAt.getTime()) /
+            86400000,
+        )
+      : Math.floor((Date.now() - profile.subscribedAt.getTime()) / 86400000);
+
+    return {
+      id: profile.id,
+      telegramUserId: profile.telegramUserId,
+      telegramUsername: profile.membershipEvent.telegramUsername,
+      channel: profile.channel,
+      subscribedAt: profile.subscribedAt,
+      isActive: profile.unsubscribeEvents.length === 0,
+      daysInChannel,
+      retainedD1: profile.retainedD1,
+      retainedD7: profile.retainedD7,
+      retainedD30: profile.retainedD30,
+      botStarted: profile.botStarted,
+      botOptedOut: profile.botOptedOut,
+      attribution: attr
+        ? {
+            type: attr.attributionType,
+            confidence: attr.confidenceScore,
+            reason: attr.reason,
+            campaign: attr.campaign?.name ?? null,
+            trackingLink: attr.trackingLink?.slug ?? null,
+            utm: {
+              source: attr.clickEvent?.utmSource,
+              medium: attr.clickEvent?.utmMedium,
+              campaign: attr.clickEvent?.utmCampaign,
+              content: attr.clickEvent?.utmContent,
+              term: attr.clickEvent?.utmTerm,
+            },
+            creativeTag: attr.trackingLink?.creativeTag ?? null,
+            postNumber: attr.trackingLink?.postNumber ?? null,
+            clickedAt: attr.clickEvent?.clickedAt ?? null,
+            telegramOpenedAt: attr.clickEvent?.telegramOpenedAt ?? null,
+          }
+        : null,
+      unsubscribes: profile.unsubscribeEvents,
+      leadMagnets: profile.leadMagnetClaims.map((c) => ({
+        name: c.leadMagnet.name,
+        slug: c.leadMagnet.slug,
+        claimedAt: c.claimedAt,
+      })),
+      conversions: profile.conversionEvents.map((e) => ({
+        eventName: e.eventName,
+        eventTime: e.eventTime,
+        status: e.status,
+      })),
+    };
+  }
+
+  async exportSubscribersCsv(workspaceId: string): Promise<string> {
+    const rows = await this.getSubscriberFeed(workspaceId, 5000);
+    const header =
+      'subscribed_at,channel,username,telegram_user_id,status,source,attribution,campaign,utm_source,utm_campaign,confidence';
+    const lines = rows.map((r) =>
+      [
+        r.subscribedAt,
+        `"${r.channelTitle.replace(/"/g, '""')}"`,
+        r.telegramUsername ?? '',
+        r.telegramUserId,
+        r.isActive ? 'active' : 'left',
+        `"${r.joinSource.replace(/"/g, '""')}"`,
+        r.attributionType,
+        r.campaignName ?? '',
+        r.utmSource ?? '',
+        r.utmCampaign ?? '',
+        r.confidenceScore,
+      ].join(','),
+    );
+    return [header, ...lines].join('\n');
+  }
+
+  async getDailyDigest(workspaceId: string, date?: string) {
+    const day = date ? new Date(date) : new Date();
+    day.setHours(0, 0, 0, 0);
+    const next = new Date(day);
+    next.setDate(next.getDate() + 1);
+
+    const [subs, unsubs, clicks, attributions] = await Promise.all([
+      this.prisma.membershipEvent.count({
+        where: {
+          workspaceId,
+          eventType: MembershipEventType.SUBSCRIBE,
+          occurredAt: { gte: day, lt: next },
+        },
+      }),
+      this.prisma.unsubscribeEvent.count({
+        where: { workspaceId, occurredAt: { gte: day, lt: next } },
+      }),
+      this.prisma.clickEvent.count({
+        where: { workspaceId, clickedAt: { gte: day, lt: next } },
+      }),
+      this.prisma.attribution.groupBy({
+        by: ['attributionType'],
+        where: {
+          workspaceId,
+          membershipEvent: {
+            eventType: MembershipEventType.SUBSCRIBE,
+            occurredAt: { gte: day, lt: next },
+          },
+        },
+        _count: true,
+      }),
+    ]);
+
+    return {
+      date: day.toISOString().slice(0, 10),
+      subscriptions: subs,
+      unsubscribes: unsubs,
+      netGrowth: subs - unsubs,
+      clicks,
+      clickToSubscribeRate: clicks > 0 ? subs / clicks : 0,
+      sources: attributions.map((a) => ({
+        type: a.attributionType,
+        count: a._count,
+      })),
+    };
+  }
 }

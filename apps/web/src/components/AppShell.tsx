@@ -22,6 +22,7 @@ const nav = [
   { href: '/integrations/ga4', label: 'GA4' },
   { href: '/integrations/tiktok', label: 'TikTok' },
   { href: '/settings/team', label: 'Команда' },
+  { href: '/settings/telegram', label: 'Telegram-бот' },
   { href: '/settings/privacy', label: 'Приватність' },
   { href: '/settings/audit-log', label: 'Аудит' },
 ];

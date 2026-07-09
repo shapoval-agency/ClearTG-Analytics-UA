@@ -32,6 +32,12 @@ export class ChannelController {
   }
 
   @RequiresWorkspace()
+  @Get(':id/bot-status')
+  botStatus(@Param('id') id: string, @WorkspaceId() workspaceId: string) {
+    return this.channel.getBotStatus(id, workspaceId);
+  }
+
+  @RequiresWorkspace()
   @Get(':id')
   get(@Param('id') id: string) {
     return this.channel.getById(id);

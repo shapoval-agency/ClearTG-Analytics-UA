@@ -59,7 +59,18 @@ export class ConversionService {
     });
 
     if (conversionEvent.status === ConversionEventStatus.PENDING) {
-      await this.deliveryQueue.add('deliver', { conversionEventId: conversionEvent.id });
+      const campaign = event.attribution?.campaignId
+        ? await this.prisma.campaign.findUnique({
+            where: { id: event.attribution.campaignId },
+            select: { conversionDelayMinutes: true },
+          })
+        : null;
+      const delayMs = (campaign?.conversionDelayMinutes ?? 0) * 60 * 1000;
+      await this.deliveryQueue.add(
+        'deliver',
+        { conversionEventId: conversionEvent.id },
+        delayMs > 0 ? { delay: delayMs } : {},
+      );
     }
 
     return conversionEvent;

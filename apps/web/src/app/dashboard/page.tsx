@@ -55,6 +55,31 @@ export default async function DashboardPage() {
     data = null;
   }
 
+  let digest: {
+    date: string;
+    subscriptions: number;
+    unsubscribes: number;
+    netGrowth: number;
+    clicks: number;
+    clickToSubscribeRate: number;
+  } | null = null;
+  try {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    digest = await api<{
+      date: string;
+      subscriptions: number;
+      unsubscribes: number;
+      netGrowth: number;
+      clicks: number;
+      clickToSubscribeRate: number;
+    }>(
+      `/api/dashboard/daily-digest?date=${yesterday.toISOString().slice(0, 10)}`,
+    );
+  } catch {
+    digest = null;
+  }
+
   return (
     <div>
       <PageHeader
@@ -75,6 +100,20 @@ export default async function DashboardPage() {
             <StatCard label="Відписки" value={data.unsubscribes} />
             <StatCard label="Кліки (реклама)" value={data.clicks} hint="Якщо використовуєте /l/ посилання" />
           </div>
+
+          {digest && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 mb-8">
+              <h2 className="font-semibold mb-1">Звіт за вчора ({digest.date})</h2>
+              <p className="text-xs text-slate-500 mb-4">Щоденна зведена аналітика для UA-ринку</p>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
+                <div><p className="text-slate-500">Підписки</p><p className="text-xl font-semibold">{digest.subscriptions}</p></div>
+                <div><p className="text-slate-500">Відписки</p><p className="text-xl font-semibold">{digest.unsubscribes}</p></div>
+                <div><p className="text-slate-500">Чистий приріст</p><p className="text-xl font-semibold">{digest.netGrowth}</p></div>
+                <div><p className="text-slate-500">Кліки</p><p className="text-xl font-semibold">{digest.clicks}</p></div>
+                <div><p className="text-slate-500">CR клік→підписка</p><p className="text-xl font-semibold">{pct(digest.clickToSubscribeRate)}</p></div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             <div className="bg-white rounded-xl border border-slate-200 p-5">

@@ -110,8 +110,38 @@ export class TrackingLinksController {
   }
 
   @RequiresWorkspace()
+  @Get(':slug/embed')
+  embedSnippet(@Param('slug') slug: string, @WorkspaceId() workspaceId: string) {
+    return this.tracking.getEmbedSnippet(workspaceId, slug);
+  }
+
+  @RequiresWorkspace()
   @Post()
   create(@Body() dto: CreateTrackingLinkDto, @WorkspaceId() workspaceId: string) {
     return this.tracking.createLink(workspaceId, dto);
+  }
+}
+
+@Public()
+@Controller()
+export class CleartgScriptController {
+  constructor(private tracking: TrackingService) {}
+
+  @Get('cleartg.js')
+  @Header('Content-Type', 'application/javascript; charset=utf-8')
+  @Header('Cache-Control', 'public, max-age=3600')
+  script() {
+    return this.tracking.getEmbedScript();
+  }
+}
+
+@Public()
+@Controller('api/tracking')
+export class TrackingOpenController {
+  constructor(private tracking: TrackingService) {}
+
+  @Post('open/:clickId')
+  openTelegram(@Param('clickId') clickId: string) {
+    return this.tracking.recordTelegramOpen(clickId);
   }
 }

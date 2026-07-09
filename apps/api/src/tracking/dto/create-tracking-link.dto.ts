@@ -82,4 +82,14 @@ export class CreateTrackingLinkDto {
   @IsOptional()
   @IsString()
   utmTerm?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  postNumber?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  creativeTag?: string;
 }

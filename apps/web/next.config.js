@@ -26,6 +26,7 @@ const nextConfig = {
       { source: '/api/:path*', destination: `${api}/api/:path*` },
       { source: '/l/:path*', destination: `${api}/l/:path*` },
       { source: '/r/:path*', destination: `${api}/r/:path*` },
+      { source: '/cleartg.js', destination: `${api}/cleartg.js` },
       { source: '/telegram/webhook', destination: `${api}/telegram/webhook` },
     ];
   },
