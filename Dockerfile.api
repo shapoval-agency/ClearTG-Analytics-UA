@@ -10,6 +10,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/database/package.json ./packages/database/
 COPY packages/shared/package.json ./packages/shared/
+# --ignore-scripts: skip packages/database postinstall (prisma generate) until schema is copied in build stage
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM deps AS build

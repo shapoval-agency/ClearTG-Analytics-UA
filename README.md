@@ -184,3 +184,15 @@ packages/
 ## License
 
 Proprietary — ClearTG Analytics UA
+
+## Деплой (Railway + Vercel)
+
+- **API (Railway):** збирається з `Dockerfile.api` (див. `railway.toml`). На етапі `deps` — `pnpm install --ignore-scripts` (без postinstall Prisma); `prisma generate` — лише в `build` після копіювання схеми.
+- **Web (Vercel):** `apps/web`, змінні — `.env.staging.example`.
+- **Репозиторій:** `https://github.com/shapoval-agency/ClearTG-Analytics-UA`
+
+### Ручний redeploy на Railway
+
+Якщо вимкнено **Auto Deploy**, після `git push` у Railway: сервіс API → **Deployments** → **Deploy** → вибрати гілку `main` і останній коміт (або **Redeploy**). Без нового коміту UI інколи не показує свіжий push — тоді **Settings → Source → Disconnect / Reconnect** репозиторій або вказати коміт вручну.
+
+Детальніше: `docs/DEPLOY-GIT.md`.
