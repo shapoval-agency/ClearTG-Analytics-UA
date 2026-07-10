@@ -14,12 +14,15 @@ COPY packages/shared/package.json ./packages/shared/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM deps AS build
+# Workspace packages must compile before API type-check (deps stage uses --ignore-scripts).
 COPY packages/shared ./packages/shared
-COPY packages/database ./packages/database
-COPY apps/api ./apps/api
 RUN pnpm --filter @cleartg/shared build
+
+COPY packages/database ./packages/database
 RUN pnpm --filter @cleartg/database generate
 RUN pnpm --filter @cleartg/database build
+
+COPY apps/api ./apps/api
 RUN pnpm --filter @cleartg/api build
 
 FROM base AS runner
