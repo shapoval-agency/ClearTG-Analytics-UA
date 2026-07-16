@@ -32,6 +32,11 @@ export async function setWorkspace(workspaceId: string) {
   jar.set(WORKSPACE_COOKIE, workspaceId, SESSION_COOKIE_OPTIONS);
 }
 
+export async function clearWorkspace() {
+  const jar = await cookies();
+  jar.delete(WORKSPACE_COOKIE);
+}
+
 export async function clearSession() {
   const jar = await cookies();
   jar.delete(TOKEN_COOKIE);

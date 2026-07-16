@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, forwardRef } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { generateSlug } from '@cleartg/shared';
@@ -130,5 +130,36 @@ export class AgencyService {
         createdAt: m.workspace.createdAt,
       };
     });
+  }
+
+  /**
+   * Deletes a client workspace the agency admin manages (ADMIN membership).
+   * Cascade removes channels, tracking, subscribers, etc. User accounts are kept.
+   */
+  async deleteClientWorkspace(agencyUserId: string, workspaceId: string) {
+    const membership = await this.prisma.workspaceMember.findUnique({
+      where: {
+        workspaceId_userId: { workspaceId, userId: agencyUserId },
+      },
+      include: {
+        workspace: { select: { id: true, name: true, slug: true } },
+      },
+    });
+
+    if (!membership || membership.role !== WorkspaceRole.ADMIN) {
+      throw new ForbiddenException('Можна видаляти лише кабінети клієнтів агентства');
+    }
+
+    if (!membership.workspace) {
+      throw new NotFoundException('Кабінет не знайдено');
+    }
+
+    await this.prisma.workspace.delete({ where: { id: workspaceId } });
+
+    return {
+      ok: true,
+      deletedId: workspaceId,
+      name: membership.workspace.name,
+    };
   }
 }

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/ui';
 import { CreateClientForm } from '@/components/CreateClientForm';
 import { OpenWorkspaceButton } from '@/components/OpenWorkspaceButton';
+import { DeleteClientButton } from '@/components/DeleteClientButton';
 import { api, AgencyClient, AuthMe } from '@/lib/api';
 import { getSession } from '@/lib/session';
 
@@ -53,7 +54,10 @@ export default async function AgencyClientsPage() {
                       OWNER: {c.ownerEmail ?? '—'} · {c.channels} каналів · {c.subscribers} учасників
                     </p>
                   </div>
-                  <OpenWorkspaceButton workspaceId={c.id} />
+                  <div className="flex items-center gap-3 shrink-0">
+                    <OpenWorkspaceButton workspaceId={c.id} />
+                    <DeleteClientButton workspaceId={c.id} workspaceName={c.name} />
+                  </div>
                 </li>
               ))}
             </ul>

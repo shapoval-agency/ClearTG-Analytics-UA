@@ -1,4 +1,11 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+} from '@nestjs/common';
 import { IsEmail, IsString, MinLength } from 'class-validator';
 import { AgencyService } from './agency.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
@@ -29,5 +36,14 @@ export class AgencyController {
   ) {
     this.agency.assertAgencyAdmin(user.email);
     return this.agency.createClientWorkspace(user.id, dto.ownerEmail, dto.name);
+  }
+
+  @Delete('clients/:workspaceId')
+  deleteClient(
+    @Param('workspaceId') workspaceId: string,
+    @CurrentUser() user: { id: string; email: string },
+  ) {
+    this.agency.assertAgencyAdmin(user.email);
+    return this.agency.deleteClientWorkspace(user.id, workspaceId);
   }
 }

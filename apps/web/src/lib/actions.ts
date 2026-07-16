@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { setWorkspace, clearSession } from './session';
+import { setWorkspace, clearSession, clearWorkspace } from './session';
 import { getApiOrigin } from '@/lib/api-origin';
 
 const API_URL = getApiOrigin();
@@ -68,6 +68,34 @@ export async function createClientWorkspaceAction(data: {
   const client = (await res.json()) as { id: string };
   await setWorkspace(client.id);
   redirect('/dashboard');
+}
+
+export async function deleteClientWorkspaceAction(workspaceId: string) {
+  const headers = await tokenHeaders();
+  if (!headers) return { error: 'Not authenticated' };
+
+  const jar = await cookies();
+  const currentWorkspace = jar.get('cleartg_workspace')?.value;
+
+  const res = await fetch(`${API_URL}/api/agency/clients/${workspaceId}`, {
+    method: 'DELETE',
+    headers,
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return {
+      error:
+        (body as { message?: string }).message?.toString() ??
+        'Не вдалося видалити клієнта',
+    };
+  }
+
+  if (currentWorkspace === workspaceId) {
+    await clearWorkspace();
+  }
+
+  redirect('/agency/clients');
 }
 
 export async function inviteMemberAction(data: { email: string; role?: string }) {
