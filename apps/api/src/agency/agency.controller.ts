@@ -46,4 +46,14 @@ export class AgencyController {
     this.agency.assertAgencyAdmin(user.email);
     return this.agency.deleteClientWorkspace(user.id, workspaceId);
   }
+
+  /** Alias for hosts/proxies that block HTTP DELETE. */
+  @Post('clients/:workspaceId/delete')
+  deleteClientPost(
+    @Param('workspaceId') workspaceId: string,
+    @CurrentUser() user: { id: string; email: string },
+  ) {
+    this.agency.assertAgencyAdmin(user.email);
+    return this.agency.deleteClientWorkspace(user.id, workspaceId);
+  }
 }

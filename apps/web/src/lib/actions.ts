@@ -77,8 +77,8 @@ export async function deleteClientWorkspaceAction(workspaceId: string) {
   const jar = await cookies();
   const currentWorkspace = jar.get('cleartg_workspace')?.value;
 
-  const res = await fetch(`${API_URL}/api/agency/clients/${workspaceId}`, {
-    method: 'DELETE',
+  const res = await fetch(`${API_URL}/api/agency/clients/${workspaceId}/delete`, {
+    method: 'POST',
     headers,
   });
 
