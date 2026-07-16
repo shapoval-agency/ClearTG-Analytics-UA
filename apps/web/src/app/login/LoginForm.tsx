@@ -65,7 +65,7 @@ export default function LoginForm({
       setError(
         localMode
           ? 'Помилка входу'
-          : 'Немає зв\'язку з API. Перевірте Railway та API_INTERNAL_URL у Vercel.',
+          : 'Немає зв\'язку з API. Перевірте API_INTERNAL_URL у Vercel або увімкніть LOCAL_MODE.',
       );
     } finally {
       setLoading(false);
@@ -83,7 +83,7 @@ export default function LoginForm({
 
         {localMode && (
           <div className="mt-4 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg space-y-1">
-            <p>Без Railway — дані у браузері.</p>
+            <p>Локальний режим — дані у браузері (без бекенду).</p>
             {loginEmailHint && (
               <p>
                 Email у Vercel: <strong>{loginEmailHint}</strong>

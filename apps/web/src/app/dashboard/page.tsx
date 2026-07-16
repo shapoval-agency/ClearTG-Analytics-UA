@@ -90,7 +90,7 @@ export default async function DashboardPage() {
       {!data ? (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-800">
           <p className="font-medium">API недоступний</p>
-          <p className="text-sm mt-1">Перевірте Railway API та змінну API_INTERNAL_URL у Vercel.</p>
+          <p className="text-sm mt-1">Перевірте API_INTERNAL_URL у Vercel або увімкніть LOCAL_MODE.</p>
         </div>
       ) : (
         <>

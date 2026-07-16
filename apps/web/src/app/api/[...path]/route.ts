@@ -29,7 +29,10 @@ async function proxy(req: NextRequest, { params }: RouteContext) {
     });
   } catch {
     return NextResponse.json(
-      { error: 'API unavailable', hint: 'Check Railway deploy and API_INTERNAL_URL on Vercel' },
+      {
+        error: 'API unavailable',
+        hint: `No response from ${getApiOrigin()}. Set API_INTERNAL_URL on Vercel or enable LOCAL_MODE=true`,
+      },
       { status: 502 },
     );
   }

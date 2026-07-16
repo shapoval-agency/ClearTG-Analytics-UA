@@ -8,10 +8,13 @@ import {
 
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as { email?: string; password?: string };
+  const apiOrigin = getApiOrigin();
+  const isFallbackLocalhost =
+    apiOrigin.includes('localhost') || apiOrigin.includes('127.0.0.1');
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${getApiOrigin()}/api/auth/staging-login`, {
+    upstream = await fetch(`${apiOrigin}/api/auth/staging-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -22,7 +25,12 @@ export async function POST(req: NextRequest) {
     });
   } catch {
     return NextResponse.json(
-      { error: 'API недоступний. Перевірте Railway та API_INTERNAL_URL у Vercel.' },
+      {
+        error: 'API недоступний',
+        hint: isFallbackLocalhost
+          ? `Vercel стукає в ${apiOrigin} (це не працює в хмарі). Додайте API_INTERNAL_URL=https://ваш-api… або увімкніть LOCAL_MODE=true`
+          : `Немає відповіді від ${apiOrigin}. Перевірте, що API запущений і URL у Vercel (API_INTERNAL_URL) правильний`,
+      },
       { status: 502 },
     );
   }
