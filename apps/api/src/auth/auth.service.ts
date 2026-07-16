@@ -56,33 +56,38 @@ export class AuthService {
   }
 
   async sendMagicLinkEmail(email: string, link: string) {
+    const loginUrl = `${resolveFrontendUrl(this.config)}/login`;
     return this.mail.send({
       to: email,
       subject: 'Вхід у ClearTG Analytics',
       text:
         `Вітаємо!\n\n` +
         `Перейдіть за посиланням, щоб увійти в ClearTG Analytics:\n${link}\n\n` +
-        `Посилання дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин.\n` +
+        `Посилання дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин і працює лише ОДИН раз.\n` +
+        `Наступного входу відкрийте ${loginUrl} і знову запросіть посилання на email.\n\n` +
         `Якщо ви не запитували вхід — проігноруйте цей лист.`,
       html:
         `<p>Вітаємо!</p>` +
         `<p><a href="${link}">Увійти в ClearTG Analytics</a></p>` +
-        `<p style="color:#64748b;font-size:14px">Посилання дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин.</p>`,
+        `<p style="color:#64748b;font-size:14px">Посилання дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин і працює <strong>лише один раз</strong>.</p>` +
+        `<p style="color:#64748b;font-size:14px">Наступного разу: <a href="${loginUrl}">${loginUrl}</a> → запросіть нове посилання.</p>`,
     });
   }
 
   async sendClientInviteEmail(email: string, workspaceName: string, link: string) {
+    const loginUrl = `${resolveFrontendUrl(this.config)}/login`;
     return this.mail.send({
       to: email,
       subject: `Запрошення до ClearTG — ${workspaceName}`,
       text:
         `Вас додано до кабінету «${workspaceName}» у ClearTG Analytics.\n\n` +
-        `Відкрийте посилання, щоб увійти:\n${link}\n\n` +
-        `Посилання дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин.`,
+        `Відкрийте посилання, щоб увійти (один раз):\n${link}\n\n` +
+        `Посилання дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин.\n` +
+        `Пізніше: ${loginUrl} → «Посилання на email».`,
       html:
         `<p>Вас додано до кабінету <strong>${workspaceName}</strong> у ClearTG Analytics.</p>` +
-        `<p><a href="${link}">Увійти в кабінет</a></p>` +
-        `<p style="color:#64748b;font-size:14px">Посилання дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин.</p>`,
+        `<p><a href="${link}">Увійти в кабінет</a> (посилання одноразове)</p>` +
+        `<p style="color:#64748b;font-size:14px">Дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин. Далі: <a href="${loginUrl}">${loginUrl}</a>.</p>`,
     });
   }
 
