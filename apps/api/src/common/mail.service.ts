@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import nodemailer from 'nodemailer';
+import { createRequire } from 'module';
 import type { Transporter } from 'nodemailer';
 import { LoggerService } from './logger.service';
+
+// nodemailer is CJS — default ESM import is undefined under Nest/commonjs
+const require_ = createRequire(__filename);
+const nodemailer = require_('nodemailer') as typeof import('nodemailer');
 
 export type SendMailInput = {
   to: string;
