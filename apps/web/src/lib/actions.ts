@@ -80,6 +80,7 @@ export async function deleteClientWorkspaceAction(workspaceId: string) {
   const res = await fetch(`${API_URL}/api/agency/clients/${workspaceId}/delete`, {
     method: 'POST',
     headers,
+    body: '{}',
   });
 
   if (!res.ok) {
