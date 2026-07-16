@@ -8,6 +8,7 @@ import { CryptoService } from '../crypto/crypto.service';
 import { LeadMagnetService } from '../lead-magnet/lead-magnet.service';
 import { InviteLinkService } from './invite-link.service';
 import { BotAdminService } from './bot-admin.service';
+import { tryPublicAppUrl } from '../common/public-app-url';
 import { hashExternalId } from '@cleartg/shared';
 import { Bot, webhookCallback } from 'grammy';
 import { MembershipEventType } from '@cleartg/database';
@@ -140,11 +141,13 @@ export class TelegramService implements OnModuleInit {
     });
 
     this.bot.command('cabinet', async (ctx) => {
-      const url = (
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.API_URL ??
-        'http://localhost:3002'
-      ).replace(/\/$/, '');
+      const url = tryPublicAppUrl(this.config);
+      if (!url) {
+        await ctx.reply(
+          'Кабінет: задайте NEXT_PUBLIC_APP_URL на API (https://clear-tg-analytics-ua-web.vercel.app)',
+        );
+        return;
+      }
       await ctx.reply(`🖥 Кабінет ClearTG:\n${url}/dashboard`);
     });
 
@@ -159,6 +162,13 @@ export class TelegramService implements OnModuleInit {
         await this.botAdmin.sendReportToChat(ctx, userId, '24h');
       } else if (action === 'channels') {
         await this.botAdmin.sendChannelsList(ctx, userId);
+      } else if (action === 'cabinet') {
+        const url = tryPublicAppUrl(this.config);
+        await ctx.reply(
+          url
+            ? `🖥 Кабінет ClearTG:\n${url}/dashboard`
+            : 'Задайте NEXT_PUBLIC_APP_URL на API (URL Vercel кабінету).',
+        );
       } else if (action === 'help') {
         await ctx.reply(this.botAdmin.helpText(), {
           reply_markup: this.botAdmin.mainMenuKeyboard(),

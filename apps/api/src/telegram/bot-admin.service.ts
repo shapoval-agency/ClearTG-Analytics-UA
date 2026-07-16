@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MembershipEventType, WorkspaceRole } from '@cleartg/database';
 import type { Context } from 'grammy';
 import { InlineKeyboard } from 'grammy';
+import { tryPublicAppUrl } from '../common/public-app-url';
 
 const BIND_TTL_SEC = 60 * 60 * 24 * 7;
 
@@ -20,12 +21,12 @@ export class BotAdminService {
     this.redis = new Redis(this.config.get<string>('REDIS_URL') ?? 'redis://localhost:6379');
   }
 
-  private appUrl() {
-    return (
-      this.config.get<string>('NEXT_PUBLIC_APP_URL') ??
-      this.config.get<string>('API_URL') ??
-      'http://localhost:3002'
-    ).replace(/\/$/, '');
+  /** Public Vercel cabinet URL; null if missing or localhost (Telegram rejects those). */
+  private cabinetUrl(path = '/dashboard') {
+    const base = tryPublicAppUrl(this.config);
+    if (!base) return null;
+    const p = path.startsWith('/') ? path : `/${path}`;
+    return `${base}${p === '/' ? '' : p}`;
   }
 
   private botUsername() {
@@ -82,17 +83,24 @@ export class BotAdminService {
   }
 
   mainMenuKeyboard(): InlineKeyboard {
-    return new InlineKeyboard()
+    const kb = new InlineKeyboard()
       .text('📊 Звіт за вчора', 'menu:report_yesterday')
       .text('📈 За 24 год', 'menu:report_24h')
       .row()
-      .text('📺 Мої канали', 'menu:channels')
-      .url('🖥 Кабінет', `${this.appUrl()}/dashboard`)
-      .row()
-      .text('❓ Допомога', 'menu:help');
+      .text('📺 Мої канали', 'menu:channels');
+
+    const app = tryPublicAppUrl(this.config);
+    if (app) {
+      kb.url('🖥 Кабінет', `${app}/dashboard`);
+    } else {
+      kb.text('🖥 Кабінет', 'menu:cabinet');
+    }
+
+    return kb.row().text('❓ Допомога', 'menu:help');
   }
 
   async sendWelcomeMenu(ctx: Context, linked: boolean) {
+    const home = this.cabinetUrl('/') ?? 'https://clear-tg-analytics-ua-web.vercel.app';
     const text = linked
       ? '👋 ClearTG Analytics UA\n\n' +
         'Бот для адміністраторів каналу: звіти, канали, досьє підписників.\n\n' +
@@ -102,7 +110,7 @@ export class BotAdminService {
         '• /channels — список каналів'
       : '👋 ClearTG Analytics UA\n\n' +
         'Щоб отримувати звіти в Telegram, спочатку привʼяжіть бота до кабінету:\n' +
-        `1. Увійдіть на ${this.appUrl()}\n` +
+        `1. Увійдіть на ${home}\n` +
         '2. Налаштування → Telegram-бот\n' +
         '3. Натисніть «Привʼязати» і знову відкрийте посилання\n\n' +
         'Після привʼязки додайте бота адміном каналу — він зʼявиться в кабінеті.';
@@ -164,6 +172,7 @@ export class BotAdminService {
       .map((a) => `  • ${this.attrLabel(a.attributionType)}: ${a._count}`)
       .join('\n');
 
+    const dash = this.cabinetUrl('/dashboard');
     return (
       `📊 Звіт (${label})\n\n` +
       `➕ Підписки: ${subs}\n` +
@@ -172,7 +181,7 @@ export class BotAdminService {
       `🔗 Кліки (реклама): ${clicks}\n` +
       (clicks > 0 ? `🎯 CR клік→підписка: ${((subs / clicks) * 100).toFixed(1)}%\n` : '') +
       (sourceLines ? `\nДжерела:\n${sourceLines}` : '') +
-      `\n\n🖥 Детальніше: ${this.appUrl()}/dashboard`
+      (dash ? `\n\n🖥 Детальніше: ${dash}` : '')
     );
   }
 
@@ -220,11 +229,12 @@ export class BotAdminService {
     }
 
     if (lines.length === 0) {
+      const channelsUrl = this.cabinetUrl('/channels');
       await ctx.reply(
         'Каналів ще немає.\n\n' +
           `1. Додайте @${this.botUsername()} адміном каналу\n` +
           '2. Увімкніть «Додавання учасників»\n' +
-          `3. Або синхронізуйте в ${this.appUrl()}/channels`,
+          (channelsUrl ? `3. Або синхронізуйте в ${channelsUrl}` : '3. Або синхронізуйте канали в веб-кабінеті'),
       );
       return;
     }
@@ -271,6 +281,7 @@ export class BotAdminService {
     const attr = profile.membershipEvent.attribution;
     const active = profile._count.unsubscribeEvents === 0;
 
+    const dossierUrl = this.cabinetUrl(`/subscribers/${profile.id}`);
     return (
       `👤 Досьє підписника\n\n` +
       `Канал: ${profile.channel.title}\n` +
@@ -284,7 +295,7 @@ export class BotAdminService {
           `Посилання: ${attr.trackingLink?.slug ? `/l/${attr.trackingLink.slug}` : '—'}\n` +
           `UTM: ${attr.clickEvent?.utmSource ?? '—'} / ${attr.clickEvent?.utmCampaign ?? '—'}`
         : '\nДжерело: не визначено') +
-      `\n\n🖥 ${this.appUrl()}/subscribers/${profile.id}`
+      (dossierUrl ? `\n\n🖥 ${dossierUrl}` : '')
     );
   }
 
@@ -349,6 +360,7 @@ export class BotAdminService {
   }
 
   helpText() {
+    const home = this.cabinetUrl('/') ?? 'https://clear-tg-analytics-ua-web.vercel.app';
     return (
       '❓ Допомога ClearTG\n\n' +
       '1. Привʼяжіть бота в кабінеті (Налаштування → Telegram)\n' +
@@ -360,7 +372,7 @@ export class BotAdminService {
       '/report — звіт за вчора\n' +
       '/channels — канали\n' +
       '/cabinet — посилання на кабінет\n\n' +
-      `Кабінет: ${this.appUrl()}`
+      `Кабінет: ${home}`
     );
   }
 }
