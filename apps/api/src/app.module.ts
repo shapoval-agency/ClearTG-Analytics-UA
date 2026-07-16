@@ -5,6 +5,7 @@ import { join } from 'path';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './prisma/prisma.module';
 import { LoggerModule } from './common/logger.module';
+import { MailModule } from './common/mail.module';
 import { CryptoModule } from './crypto/crypto.module';
 import { WorkspaceModule } from './workspace/workspace.module';
 import { ChannelModule } from './channel/channel.module';
@@ -39,6 +40,7 @@ import { HealthController } from './health.controller';
     }),
     PrismaModule,
     LoggerModule,
+    MailModule,
     CryptoModule,
     WorkspaceModule,
     ChannelModule,

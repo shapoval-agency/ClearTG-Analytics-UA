@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -11,7 +11,7 @@ import { TelegramModule } from '../telegram/telegram.module';
 
 @Module({
   imports: [
-    AgencyModule,
+    forwardRef(() => AgencyModule),
     TelegramModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

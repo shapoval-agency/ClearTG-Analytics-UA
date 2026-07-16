@@ -1,12 +1,12 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Inject, forwardRef } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { LoggerService } from '../common/logger.service';
 import { AgencyService } from '../agency/agency.service';
 import { BotAdminService } from '../telegram/bot-admin.service';
 import { resolveFrontendUrl } from '../common/public-app-url';
+import { MailService } from '../common/mail.service';
 
 const MAGIC_LINK_TTL_MINUTES = 15;
 
@@ -16,12 +16,29 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
-    private logger: LoggerService,
+    @Inject(forwardRef(() => AgencyService))
     private agency: AgencyService,
     private botAdmin: BotAdminService,
+    private mail: MailService,
   ) {}
 
   async requestMagicLink(email: string) {
+    const normalized = email.trim().toLowerCase();
+    const { link } = await this.createMagicLink(normalized);
+    const delivery = await this.sendMagicLinkEmail(normalized, link);
+
+    const isDev = this.config.get<string>('NODE_ENV') !== 'production';
+    const staging = this.config.get<string>('STAGING_MODE') === 'true';
+    return {
+      message: delivery.sent ? 'Magic link sent' : 'Magic link created',
+      emailSent: delivery.sent,
+      ...(delivery.error ? { emailError: delivery.error } : {}),
+      ...((isDev || staging || !delivery.sent) ? { devLink: link } : {}),
+    };
+  }
+
+  /** Create magic-link token + URL (used by login and agency invites). */
+  async createMagicLink(email: string): Promise<{ link: string; email: string }> {
     const normalized = email.trim().toLowerCase();
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
@@ -32,28 +49,41 @@ export class AuthService {
     });
 
     const appUrl = resolveFrontendUrl(this.config);
-    const link = `${appUrl}/auth/callback?token=${rawToken}`;
-
-    await this.sendMagicLinkEmail(normalized, link);
-
-    const isDev = this.config.get<string>('NODE_ENV') !== 'production';
-    const staging = this.config.get<string>('STAGING_MODE') === 'true';
     return {
-      message: 'Magic link sent',
-      ...((isDev || staging) ? { devLink: link } : {}),
+      email: normalized,
+      link: `${appUrl}/auth/callback?token=${rawToken}`,
     };
   }
 
-  private async sendMagicLinkEmail(email: string, link: string) {
-    const smtpHost = this.config.get<string>('SMTP_HOST');
-    if (!smtpHost) {
-      this.logger.log(`Magic link for ${email}: ${link}`, 'Auth');
-      return;
-    }
+  async sendMagicLinkEmail(email: string, link: string) {
+    return this.mail.send({
+      to: email,
+      subject: 'Вхід у ClearTG Analytics',
+      text:
+        `Вітаємо!\n\n` +
+        `Перейдіть за посиланням, щоб увійти в ClearTG Analytics:\n${link}\n\n` +
+        `Посилання дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин.\n` +
+        `Якщо ви не запитували вхід — проігноруйте цей лист.`,
+      html:
+        `<p>Вітаємо!</p>` +
+        `<p><a href="${link}">Увійти в ClearTG Analytics</a></p>` +
+        `<p style="color:#64748b;font-size:14px">Посилання дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин.</p>`,
+    });
+  }
 
-    // SMTP delivery — configure SMTP_* env vars for production
-    this.logger.log(`Magic link queued for ${email}`, 'Auth');
-    void link;
+  async sendClientInviteEmail(email: string, workspaceName: string, link: string) {
+    return this.mail.send({
+      to: email,
+      subject: `Запрошення до ClearTG — ${workspaceName}`,
+      text:
+        `Вас додано до кабінету «${workspaceName}» у ClearTG Analytics.\n\n` +
+        `Відкрийте посилання, щоб увійти:\n${link}\n\n` +
+        `Посилання дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин.`,
+      html:
+        `<p>Вас додано до кабінету <strong>${workspaceName}</strong> у ClearTG Analytics.</p>` +
+        `<p><a href="${link}">Увійти в кабінет</a></p>` +
+        `<p style="color:#64748b;font-size:14px">Посилання дійсне ${MAGIC_LINK_TTL_MINUTES} хвилин.</p>`,
+    });
   }
 
   async verifyMagicLink(rawToken: string) {

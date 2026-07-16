@@ -1,15 +1,18 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { generateSlug } from '@cleartg/shared';
 import { WorkspaceRole } from '@cleartg/database';
 import { resolveFrontendUrl } from '../common/public-app-url';
+import { AuthService } from '../auth/auth.service';
 
 @Injectable()
 export class AgencyService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    @Inject(forwardRef(() => AuthService))
+    private auth: AuthService,
   ) {}
 
   getAgencyAdminEmail(): string | null {
@@ -65,6 +68,15 @@ export class AgencyService {
       },
     });
 
+    const { link } = await this.auth.createMagicLink(normalizedOwner);
+    const inviteMail = await this.auth.sendClientInviteEmail(
+      normalizedOwner,
+      workspaceName,
+      link,
+    );
+
+    const staging = this.config.get<string>('STAGING_MODE') === 'true';
+
     return {
       id: workspace.id,
       name: workspace.name,
@@ -74,6 +86,11 @@ export class AgencyService {
         email: m.user.email,
         role: m.role,
       })),
+      invite: {
+        emailSent: inviteMail.sent,
+        ...(inviteMail.error ? { emailError: inviteMail.error } : {}),
+        ...((staging || !inviteMail.sent) ? { loginLink: link } : {}),
+      },
     };
   }
 
