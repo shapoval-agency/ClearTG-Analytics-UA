@@ -7,6 +7,7 @@ import {
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { LoggerService } from './common/logger.service';
+import { resolveFrontendUrl } from './common/public-app-url';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -26,14 +27,15 @@ async function bootstrap() {
     }),
   );
 
+  const corsOrigin = resolveFrontendUrl();
   app.enableCors({
-    origin: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3002',
+    origin: corsOrigin,
     credentials: true,
   });
 
   const port = parseInt(process.env.API_PORT ?? '3001', 10);
   await app.listen(port, '0.0.0.0');
-  logger.log(`ClearTG API running on port ${port}`, 'Bootstrap');
+  logger.log(`ClearTG API running on port ${port} (CORS: ${corsOrigin})`, 'Bootstrap');
 }
 
 bootstrap();

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { generateSlug } from '@cleartg/shared';
 import { WorkspaceRole } from '@cleartg/database';
+import { resolveFrontendUrl } from '../common/public-app-url';
 
 @Injectable()
 export class AgencyService {
@@ -33,7 +34,7 @@ export class AgencyService {
     workspaceName: string,
   ) {
     const normalizedOwner = ownerEmail.trim().toLowerCase();
-    const appUrl = this.config.get<string>('NEXT_PUBLIC_APP_URL') ?? 'http://localhost:3002';
+    const appUrl = resolveFrontendUrl(this.config);
 
     const owner = await this.prisma.user.upsert({
       where: { email: normalizedOwner },

@@ -17,6 +17,7 @@ import {
 } from '@cleartg/shared';
 import { CreateTrackingLinkDto } from './dto/create-tracking-link.dto';
 import type { LandingPageContext } from './tracking-html';
+import { resolveFrontendUrl } from '../common/public-app-url';
 
 export type TrackingPageSource = 'landing_page' | 'shortlink_page';
 
@@ -192,10 +193,7 @@ export class TrackingService {
     });
 
     const telegramUrl = await this.resolveDestination(link, clickEvent.id);
-    const apiOrigin =
-      process.env.NEXT_PUBLIC_APP_URL ??
-      process.env.API_URL ??
-      'http://localhost:3001';
+    const apiOrigin = resolveFrontendUrl();
     const pageContext = this.buildPageContext(link, telegramUrl, clickEvent.id, apiOrigin);
 
     return {
@@ -262,10 +260,7 @@ export class TrackingService {
     });
     if (!link) throw new NotFoundException('Tracking link not found');
 
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL ??
-      process.env.API_URL ??
-      'http://localhost:3002';
+    const appUrl = resolveFrontendUrl();
 
     return {
       slug: link.slug,

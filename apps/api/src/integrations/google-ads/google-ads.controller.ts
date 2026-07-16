@@ -5,6 +5,7 @@ import { RequiresWorkspace, Public } from '../../common/decorators/auth.decorato
 import { WorkspaceId } from '../../common/decorators/user.decorator';
 import { IsOptional, IsString } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
+import { resolveFrontendUrl } from '../../common/public-app-url';
 
 class UpsertGoogleAdsDto {
   @IsString()
@@ -52,7 +53,7 @@ export class GoogleAdsController {
     @Query('error') error: string,
     @Res() res: { redirect: (statusCode: number, url: string) => void },
   ) {
-    const appUrl = this.config.get<string>('NEXT_PUBLIC_APP_URL') ?? 'http://localhost:3000';
+    const appUrl = resolveFrontendUrl(this.config);
 
     if (error || !code || !state) {
       return res.redirect(HttpStatus.FOUND, `${appUrl}/integrations/google-ads?error=oauth_denied`);

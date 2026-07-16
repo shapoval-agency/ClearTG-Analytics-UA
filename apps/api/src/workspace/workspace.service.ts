@@ -2,6 +2,7 @@ import { WorkspaceRole } from '@cleartg/database';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { generateSlug } from '@cleartg/shared';
+import { resolveFrontendUrl } from '../common/public-app-url';
 
 @Injectable()
 export class WorkspaceService {
@@ -9,7 +10,7 @@ export class WorkspaceService {
 
   async create(name: string, ownerUserId: string) {
     const slug = generateSlug(8);
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+    const appUrl = resolveFrontendUrl();
 
     return this.prisma.workspace.create({
       data: {

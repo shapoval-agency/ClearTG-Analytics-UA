@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoggerService } from '../common/logger.service';
 import { AgencyService } from '../agency/agency.service';
 import { BotAdminService } from '../telegram/bot-admin.service';
+import { resolveFrontendUrl } from '../common/public-app-url';
 
 const MAGIC_LINK_TTL_MINUTES = 15;
 
@@ -30,7 +31,7 @@ export class AuthService {
       data: { email: normalized, tokenHash, expiresAt },
     });
 
-    const appUrl = this.config.get<string>('NEXT_PUBLIC_APP_URL') ?? 'http://localhost:3000';
+    const appUrl = resolveFrontendUrl(this.config);
     const link = `${appUrl}/auth/callback?token=${rawToken}`;
 
     await this.sendMagicLinkEmail(normalized, link);
