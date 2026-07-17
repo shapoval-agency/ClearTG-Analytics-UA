@@ -338,7 +338,12 @@ export class TelegramService implements OnModuleInit {
         'Telegram',
       );
     } else {
-      await this.processUnsubscribe(channel.workspaceId, channel.id, telegramUserId);
+      await this.processUnsubscribe(
+        channel.workspaceId,
+        channel.id,
+        telegramUserId,
+        user.username,
+      );
       this.logger.log(
         `Відписка: user ${telegramUserId} з каналу ${channel.title}`,
         'Telegram',
@@ -398,10 +403,31 @@ export class TelegramService implements OnModuleInit {
     workspaceId: string,
     channelId: string,
     telegramUserId: string,
+    username?: string,
   ) {
     const profile = await this.prisma.subscriberProfile.findFirst({
       where: { workspaceId, channelId, telegramUserId },
     });
+
+    // Telegram іноді шле кілька chat_member підряд — не дублюємо відписку
+    const recent = await this.prisma.unsubscribeEvent.findFirst({
+      where: {
+        workspaceId,
+        channelId,
+        telegramUserId,
+        occurredAt: { gte: new Date(Date.now() - 60_000) },
+      },
+      orderBy: { occurredAt: 'desc' },
+    });
+    if (recent) {
+      if (!recent.subscriberProfileId && profile?.id) {
+        await this.prisma.unsubscribeEvent.update({
+          where: { id: recent.id },
+          data: { subscriberProfileId: profile.id },
+        });
+      }
+      return;
+    }
 
     await this.prisma.membershipEvent.create({
       data: {
@@ -409,6 +435,7 @@ export class TelegramService implements OnModuleInit {
         channelId,
         eventType: MembershipEventType.UNSUBSCRIBE,
         telegramUserId,
+        telegramUsername: username,
       },
     });
 
@@ -416,7 +443,7 @@ export class TelegramService implements OnModuleInit {
       data: {
         workspaceId,
         channelId,
-        subscriberProfileId: profile?.id,
+        subscriberProfileId: profile?.id ?? null,
         telegramUserId,
       },
     });

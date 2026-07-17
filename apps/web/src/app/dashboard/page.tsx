@@ -38,6 +38,8 @@ export default async function DashboardPage() {
     id: string;
     occurredAt: string;
     channelTitle: string;
+    telegramUsername: string | null;
+    telegramUserId?: string | null;
     attributionType: string | null;
     campaignName: string | null;
     trackingLinkSlug: string | null;
@@ -185,11 +187,17 @@ export default async function DashboardPage() {
                 <div className="space-y-3">
                   {recentUnsubscribes.map((u) => (
                     <div key={u.id} className="text-sm border-b border-slate-100 pb-2 last:border-0">
-                      <div className="flex justify-between">
-                        <span className="font-medium">
-                          {u.attributionType ? sourceSummary(u) : 'Невідоме джерело'}
+                      <div className="flex justify-between gap-2">
+                        <span className="font-medium truncate">
+                          {u.telegramUsername
+                            ? `@${u.telegramUsername}`
+                            : u.telegramUserId
+                              ? `id ${u.telegramUserId}`
+                              : 'Користувач'}
+                          {' · '}
+                          {u.attributionType ? sourceSummary(u) : 'без джерела підписки'}
                         </span>
-                        <span className="text-slate-400">{formatDateUk(u.occurredAt)}</span>
+                        <span className="text-slate-400 shrink-0">{formatDateUk(u.occurredAt)}</span>
                       </div>
                       <p className="text-slate-500 text-xs mt-0.5">{u.channelTitle}</p>
                     </div>

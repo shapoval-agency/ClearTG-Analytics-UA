@@ -256,14 +256,87 @@ export class DashboardService {
       take: limit,
     });
 
+    // Fallback: профіль могли не привʼязати (підписка до бота / без profile id)
+    const missingUserIds = [
+      ...new Set(
+        events
+          .filter((e) => !e.subscriberProfile)
+          .map((e) => e.telegramUserId),
+      ),
+    ];
+    const fallbackProfiles =
+      missingUserIds.length === 0
+        ? []
+        : await this.prisma.subscriberProfile.findMany({
+            where: {
+              workspaceId,
+              telegramUserId: { in: missingUserIds },
+            },
+            include: {
+              membershipEvent: {
+                include: {
+                  attribution: {
+                    include: {
+                      campaign: { select: { name: true } },
+                      trackingLink: { select: { slug: true, name: true } },
+                      clickEvent: {
+                        select: {
+                          utmSource: true,
+                          utmMedium: true,
+                          utmCampaign: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          });
+    const profileByUserChannel = new Map(
+      fallbackProfiles.map((p) => [`${p.channelId}:${p.telegramUserId}`, p]),
+    );
+
+    const unsubMemberships = await this.prisma.membershipEvent.findMany({
+      where: {
+        workspaceId,
+        eventType: MembershipEventType.UNSUBSCRIBE,
+        telegramUserId: { in: events.map((e) => e.telegramUserId) },
+      },
+      select: {
+        telegramUserId: true,
+        channelId: true,
+        telegramUsername: true,
+        occurredAt: true,
+      },
+      orderBy: { occurredAt: 'desc' },
+    });
+    const usernameByUserChannel = new Map<string, string>();
+    for (const m of unsubMemberships) {
+      const key = `${m.channelId}:${m.telegramUserId}`;
+      if (m.telegramUsername && !usernameByUserChannel.has(key)) {
+        usernameByUserChannel.set(key, m.telegramUsername);
+      }
+    }
+
     return events.map((e) => {
-      const attr = e.subscriberProfile?.membershipEvent.attribution;
+      const profile =
+        e.subscriberProfile ??
+        profileByUserChannel.get(`${e.channelId}:${e.telegramUserId}`) ??
+        null;
+      const attr = profile?.membershipEvent.attribution ?? null;
+      const username =
+        profile?.membershipEvent.telegramUsername ??
+        usernameByUserChannel.get(`${e.channelId}:${e.telegramUserId}`) ??
+        null;
+
       return {
         id: e.id,
         occurredAt: e.occurredAt,
         channelTitle: e.channel.title,
-        telegramUsername: e.subscriberProfile?.membershipEvent.telegramUsername ?? null,
-        subscribedAt: e.subscriberProfile?.subscribedAt ?? null,
+        telegramUserId: e.telegramUserId,
+        telegramUsername: username,
+        subscribedAt: profile?.subscribedAt ?? null,
+        hasSubscriberProfile: Boolean(profile),
         attributionType: attr?.attributionType ?? null,
         campaignName: attr?.campaign?.name ?? null,
         trackingLinkSlug: attr?.trackingLink?.slug ?? null,

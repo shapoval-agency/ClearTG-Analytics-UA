@@ -25,8 +25,10 @@ interface UnsubscribeRow {
   id: string;
   occurredAt: string;
   channelTitle: string;
+  telegramUserId?: string | null;
   telegramUsername: string | null;
   subscribedAt: string | null;
+  hasSubscriberProfile?: boolean;
   attributionType: string | null;
   campaignName: string | null;
   trackingLinkSlug: string | null;
@@ -115,7 +117,8 @@ export default async function ReportsSubscriptionsPage() {
                 <tr className="border-b text-left text-slate-500">
                   <th className="p-4">Дата відписки</th>
                   <th className="p-4">Канал</th>
-                  <th className="p-4">Підписався</th>
+                  <th className="p-4">Користувач</th>
+                  <th className="p-4">Дата підписки</th>
                   <th className="p-4">Джерело підписки</th>
                   <th className="p-4">Тип атрибуції</th>
                 </tr>
@@ -125,14 +128,27 @@ export default async function ReportsSubscriptionsPage() {
                   <tr key={u.id} className="border-b last:border-0">
                     <td className="p-4 whitespace-nowrap">{formatDateUk(u.occurredAt)}</td>
                     <td className="p-4">{u.channelTitle}</td>
+                    <td className="p-4 text-slate-600">
+                      {u.telegramUsername
+                        ? `@${u.telegramUsername}`
+                        : u.telegramUserId
+                          ? `id ${u.telegramUserId}`
+                          : '—'}
+                    </td>
                     <td className="p-4 whitespace-nowrap">
-                      {u.subscribedAt ? formatDateUk(u.subscribedAt) : '—'}
+                      {u.subscribedAt ? formatDateUk(u.subscribedAt) : 'немає запису'}
                     </td>
                     <td className="p-4">
-                      {u.attributionType ? sourceSummary(u) : '—'}
+                      {u.attributionType
+                        ? sourceSummary(u)
+                        : u.hasSubscriberProfile === false || !u.subscribedAt
+                          ? 'Підписка не була зафіксована ботом'
+                          : 'Без атрибуції (органіка / невідомо)'}
                     </td>
                     <td className="p-4">
-                      {u.attributionType ? attributionTypeLabel(u.attributionType) : '—'}
+                      {u.attributionType
+                        ? attributionTypeLabel(u.attributionType)
+                        : '—'}
                     </td>
                   </tr>
                 ))}
@@ -140,6 +156,11 @@ export default async function ReportsSubscriptionsPage() {
             </table>
           </div>
         )}
+        <p className="text-xs text-slate-500 mt-3">
+          Прочерки / «немає запису» означають: людина вийшла з каналу, але ClearTG не бачив її
+          підписку (бот доданий пізніше, або підписка без tracking). Це не імена — колонка
+          «Користувач» показує @username або Telegram ID.
+        </p>
       </section>
     </div>
   );
