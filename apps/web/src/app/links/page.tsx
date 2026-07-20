@@ -52,6 +52,7 @@ export default async function LinksPage() {
               {' '}у другому терміналі — отримаєте публічний https://….loca.lt URL для посилань.
             </div>
           )}
+      <CreateTrackingLinkForm channels={channels} campaigns={campaigns} />
       {links.length === 0 ? (
         <div className="bg-white rounded-xl border p-8 text-center text-slate-500">
           <p>Створіть перше tracking-посилання вище.</p>
