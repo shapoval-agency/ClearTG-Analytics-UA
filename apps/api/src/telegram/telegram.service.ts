@@ -359,10 +359,17 @@ export class TelegramService implements OnModuleInit {
     updateId: number,
     telegramInviteUrl?: string | null,
   ) {
-    const existing = await this.prisma.subscriberProfile.findFirst({
+    const lastProfile = await this.prisma.subscriberProfile.findFirst({
       where: { workspaceId, channelId, telegramUserId },
+      orderBy: { subscribedAt: 'desc' },
+      include: { _count: { select: { unsubscribeEvents: true } } },
     });
-    if (existing) return;
+
+    // Дублікат того самого chat_member update (Telegram шле кілька підряд) —
+    // не створюємо другий профіль, якщо останній ще активний (без відписки).
+    // Якщо останній профіль вже має відписку — це повторна підписка (resubscribe):
+    // створюємо новий профіль з новою атрибуцією джерела.
+    if (lastProfile && lastProfile._count.unsubscribeEvents === 0) return;
 
     let inviteLinkId: string | null = null;
     if (telegramInviteUrl) {
@@ -405,8 +412,10 @@ export class TelegramService implements OnModuleInit {
     telegramUserId: string,
     username?: string,
   ) {
+    // Беремо найновіший профіль (може бути кілька — по одному на цикл підписки).
     const profile = await this.prisma.subscriberProfile.findFirst({
       where: { workspaceId, channelId, telegramUserId },
+      orderBy: { subscribedAt: 'desc' },
     });
 
     // Telegram іноді шле кілька chat_member підряд — не дублюємо відписку

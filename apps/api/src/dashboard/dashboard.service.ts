@@ -272,6 +272,8 @@ export class DashboardService {
               workspaceId,
               telegramUserId: { in: missingUserIds },
             },
+            // asc: у Map з однаковим ключем останній запис перемагає — лишаємо найновіший профіль
+            orderBy: { subscribedAt: 'asc' },
             include: {
               membershipEvent: {
                 include: {

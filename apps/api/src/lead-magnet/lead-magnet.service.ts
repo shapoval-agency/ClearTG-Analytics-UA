@@ -141,6 +141,7 @@ export class LeadMagnetService {
         channelId: leadMagnet.channelId,
         telegramUserId,
       },
+      orderBy: { subscribedAt: 'desc' },
     });
 
     if (!profile) {

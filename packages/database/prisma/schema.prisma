@@ -411,7 +411,10 @@ model SubscriberProfile {
   mailingRecipients MailingRecipient[]
   conversionEvents  ConversionEvent[]
 
-  @@unique([workspaceId, channelId, telegramUserId])
+  // Немає @@unique — одна людина може мати кілька профілів для одного каналу,
+  // по одному на кожен цикл підписка→відписка→повторна підписка (resubscribe).
+  // "Активний" профіль — той, що ще не має пов'язаної UnsubscribeEvent.
+  @@index([workspaceId, channelId, telegramUserId])
   @@map("subscriber_profiles")
 }
 
