@@ -11,7 +11,7 @@ import { BotAdminService } from './bot-admin.service';
 import { tryPublicAppUrl } from '../common/public-app-url';
 import { hashExternalId } from '@cleartg/shared';
 import { Bot, webhookCallback } from 'grammy';
-import { MembershipEventType } from '@cleartg/database';
+import { MembershipEventType, Prisma } from '@cleartg/database';
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
@@ -46,6 +46,19 @@ export class TelegramService implements OnModuleInit {
     }
 
     this.bot = new Bot(token);
+
+    // Без цього необроблена помилка в будь-якому update (webhook чи polling)
+    // валить весь Node-процес (unhandled rejection) — весь API та бот падають
+    // через збій обробки ОДНОГО апдейту.
+    this.bot.catch((err) => {
+      this.logger.error(
+        `Помилка обробки Telegram update ${err.ctx.update.update_id}: ${
+          err.error instanceof Error ? err.error.message : String(err.error)
+        }`,
+        'Telegram',
+      );
+    });
+
     this.setupHandlers();
 
     const staging = this.config.get<string>('STAGING_MODE') === 'true';
@@ -391,16 +404,30 @@ export class TelegramService implements OnModuleInit {
 
     const externalIdHash = hashExternalId(telegramUserId, workspaceId, this.crypto.getHashSalt());
 
-    await this.prisma.subscriberProfile.create({
-      data: {
-        workspaceId,
-        channelId,
-        membershipEventId: membershipEvent.id,
-        externalIdHash,
-        telegramUserId,
-        subscribedAt: membershipEvent.occurredAt,
-      },
-    });
+    try {
+      await this.prisma.subscriberProfile.create({
+        data: {
+          workspaceId,
+          channelId,
+          membershipEventId: membershipEvent.id,
+          externalIdHash,
+          telegramUserId,
+          subscribedAt: membershipEvent.occurredAt,
+        },
+      });
+    } catch (err) {
+      // Захист від гонки/розсинхрону схеми: якщо стара unique(workspace,channel,user)
+      // ще діє на БД (наприклад, міграція ще не прогнана на цьому інстансі) — не валимо
+      // весь процес, а тільки логуємо і виходимо без атрибуції для цього апдейту.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        this.logger.error(
+          `subscriberProfile.create P2002 (workspace/channel/user) — можливо, стара БД-схема ще не оновлена (prisma db push): ${telegramUserId}`,
+          'Telegram',
+        );
+        return;
+      }
+      throw err;
+    }
 
     await this.attribution.attributeMembership(membershipEvent.id, inviteLinkId);
     await this.conversion.createSubscribeEvent(membershipEvent.id);
