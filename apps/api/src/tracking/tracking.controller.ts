@@ -25,11 +25,22 @@ function extractRequestMeta(req: RequestWithMeta) {
   };
 }
 
-function respondToClick(result: RecordClickResult, reply: TrackingReply) {
+/**
+ * `undefined` означає, що редирект уже надіслано напряму через reply.redirect() —
+ * контролер НЕ повинен нічого повертати з handler'а після цього.
+ *
+ * Це важливо через нюанс Nest+Fastify з `@Res({ passthrough: true })`: якщо handler
+ * викликає reply.redirect() (ставить статус 302 + Location) і при цьому ЩЕ Й повертає
+ * значення з методу, Nest переписує статус відповіді назад на 200 (Location-заголовок
+ * лишається, а редирект-статус губиться) — браузер не переходить за 200-відповіддю
+ * з Location, просто лишається на пустій сторінці.
+ */
+function respondToClick(result: RecordClickResult, reply: TrackingReply): string | undefined {
   const { pageContext, autoRedirect, redirectDelayMs } = result;
 
   if (autoRedirect && redirectDelayMs === 0) {
-    return reply.redirect(pageContext.telegramUrl);
+    reply.redirect(pageContext.telegramUrl);
+    return undefined;
   }
 
   if (autoRedirect && redirectDelayMs > 0) {
@@ -62,10 +73,11 @@ export class LandingPageController {
     );
 
     const body = respondToClick(result, reply);
-    if (typeof body === 'string') {
-      reply.header('Content-Type', 'text/html; charset=utf-8');
-      return body;
+    if (body === undefined) {
+      // Редирект уже надіслано в respondToClick() — нічого більше не повертаємо.
+      return;
     }
+    reply.header('Content-Type', 'text/html; charset=utf-8');
     return body;
   }
 }
@@ -91,10 +103,11 @@ export class ShortlinkController {
     );
 
     const body = respondToClick(result, reply);
-    if (typeof body === 'string') {
-      reply.header('Content-Type', 'text/html; charset=utf-8');
-      return body;
+    if (body === undefined) {
+      // Редирект уже надіслано в respondToClick() — нічого більше не повертаємо.
+      return;
     }
+    reply.header('Content-Type', 'text/html; charset=utf-8');
     return body;
   }
 }
