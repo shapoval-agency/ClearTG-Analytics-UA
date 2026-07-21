@@ -4,6 +4,7 @@ import { CreateTrackingLinkForm } from './CreateTrackingLinkForm';
 import { EmbedSnippet } from '@/components/EmbedSnippet';
 import { isLocalMode } from '@/lib/local-mode';
 import { LocalLinks } from '@/components/local/LocalLinks';
+import { setTrackingLinkActiveAction } from '@/lib/actions';
 
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
 
@@ -67,9 +68,19 @@ export default async function LinksPage() {
                   {l.name && <p className="text-sm text-slate-600 mt-1">{l.name}</p>}
                   <p className="text-xs text-slate-500 mt-1">{LINK_MODE_LABELS[l.linkMode]}</p>
                 </div>
-                <span className={`text-xs px-2 py-1 rounded ${l.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100'}`}>
-                  {l.isActive ? 'Активне' : 'Неактивне'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-1 rounded ${l.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100'}`}>
+                    {l.isActive ? 'Активне' : 'Неактивне'}
+                  </span>
+                  <form action={setTrackingLinkActiveAction.bind(null, l.id, !l.isActive)}>
+                    <button
+                      type="submit"
+                      className="text-xs text-slate-500 underline hover:text-slate-700"
+                    >
+                      {l.isActive ? 'Архівувати' : 'Активувати'}
+                    </button>
+                  </form>
+                </div>
               </div>
               <div className="flex gap-4 mt-3 text-sm text-slate-500">
                 <span>{l.channel.title}</span>

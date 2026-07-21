@@ -112,6 +112,22 @@ export class TrackingService {
     }));
   }
 
+  /**
+   * "Видалення" посилання — це деактивація (isActive=false), а НЕ DELETE рядка.
+   * ClickEvent.trackingLinkId має onDelete: Cascade — фізичне видалення TrackingLink
+   * знищило б усю історію кліків/аналітики по ньому. Деактивована посилання просто
+   * перестає приймати нові кліки (getLinkBySlug кидає 404), історія лишається.
+   */
+  async setActive(workspaceId: string, id: string, isActive: boolean) {
+    const link = await this.prisma.trackingLink.findFirst({ where: { id, workspaceId } });
+    if (!link) throw new NotFoundException('Tracking link not found');
+
+    return this.prisma.trackingLink.update({
+      where: { id },
+      data: { isActive },
+    });
+  }
+
   async getLinkBySlug(slug: string) {
     const link = await this.prisma.trackingLink.findUnique({
       where: { slug },

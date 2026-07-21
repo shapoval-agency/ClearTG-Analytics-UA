@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Body, Req, Res, Header } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Post, Body, Req, Res, Header } from '@nestjs/common';
 
 type TrackingReply = {
   redirect(code: number, url: string): unknown;
@@ -132,6 +132,18 @@ export class TrackingLinksController {
   @Post()
   create(@Body() dto: CreateTrackingLinkDto, @WorkspaceId() workspaceId: string) {
     return this.tracking.createLink(workspaceId, dto);
+  }
+
+  @RequiresWorkspace()
+  @Patch(':id/archive')
+  archive(@Param('id') id: string, @WorkspaceId() workspaceId: string) {
+    return this.tracking.setActive(workspaceId, id, false);
+  }
+
+  @RequiresWorkspace()
+  @Patch(':id/activate')
+  activate(@Param('id') id: string, @WorkspaceId() workspaceId: string) {
+    return this.tracking.setActive(workspaceId, id, true);
   }
 }
 

@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { setWorkspace, clearSession, clearWorkspace } from './session';
 import { getApiOrigin } from '@/lib/api-origin';
@@ -189,6 +190,19 @@ export async function createTrackingLinkAction(data: {
   }
 
   redirect('/links');
+}
+
+/** Void return: bound directly as a <form action> in links/page.tsx. */
+export async function setTrackingLinkActiveAction(id: string, isActive: boolean): Promise<void> {
+  const headers = await authHeaders();
+  if (!headers) return;
+
+  await fetch(
+    `${API_URL}/api/tracking-links/${id}/${isActive ? 'activate' : 'archive'}`,
+    { method: 'PATCH', headers },
+  );
+
+  revalidatePath('/links');
 }
 
 export async function saveMetaIntegrationAction(data: {

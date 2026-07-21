@@ -30,8 +30,6 @@ export function CreateTrackingLinkForm({
   const [linkMode, setLinkMode] = useState<'LANDING_PAGE' | 'SHORTLINK'>('LANDING_PAGE');
   const [adSource, setAdSource] = useState<AdSourceValue>('meta');
   const [customSource, setCustomSource] = useState('');
-  const [utmCampaign, setUtmCampaign] = useState('');
-  const [utmContent, setUtmContent] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -52,8 +50,6 @@ export function CreateTrackingLinkForm({
       linkMode,
       utmSource: utmSource || undefined,
       utmMedium: sourceMeta.medium || undefined,
-      utmCampaign: utmCampaign.trim() || undefined,
-      utmContent: utmContent.trim() || undefined,
     });
     if (result?.error) {
       setError(result.error);
@@ -107,26 +103,6 @@ export function CreateTrackingLinkForm({
             placeholder="Своя назва джерела (utm_source)"
           />
         )}
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-sm text-slate-600 mb-1">UTM Campaign</label>
-          <input
-            className="w-full border rounded-lg px-3 py-2"
-            value={utmCampaign}
-            onChange={(e) => setUtmCampaign(e.target.value)}
-            placeholder="channel_post, spring_sale…"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-slate-600 mb-1">UTM Content</label>
-          <input
-            className="w-full border rounded-lg px-3 py-2"
-            value={utmContent}
-            onChange={(e) => setUtmContent(e.target.value)}
-            placeholder="link, creative1…"
-          />
-        </div>
       </div>
       <div>
         <label className="block text-sm text-slate-600 mb-1">Канал</label>
