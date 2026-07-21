@@ -1,7 +1,7 @@
 import { Controller, Get, Param, Post, Body, Req, Res, Header } from '@nestjs/common';
 
 type TrackingReply = {
-  redirect(url: string): unknown;
+  redirect(code: number, url: string): unknown;
   header(name: string, value: string): TrackingReply;
 };
 import { TrackingService } from './tracking.service';
@@ -29,17 +29,17 @@ function extractRequestMeta(req: RequestWithMeta) {
  * `undefined` означає, що редирект уже надіслано напряму через reply.redirect() —
  * контролер НЕ повинен нічого повертати з handler'а після цього.
  *
- * Це важливо через нюанс Nest+Fastify з `@Res({ passthrough: true })`: якщо handler
- * викликає reply.redirect() (ставить статус 302 + Location) і при цьому ЩЕ Й повертає
- * значення з методу, Nest переписує статус відповіді назад на 200 (Location-заголовок
- * лишається, а редирект-статус губиться) — браузер не переходить за 200-відповіддю
- * з Location, просто лишається на пустій сторінці.
+ * Статус 302 передаємо ЯВНО другим аргументом. Nest виставляє статус відповіді 200
+ * ще ДО виконання handler'а (незалежно від @Res passthrough), а Fastify-реалізація
+ * reply.redirect(url) БЕЗ явного коду перевикористовує вже виставлений статус замість
+ * дефолтного 302 — Location-заголовок був правильний, а статус лишався 200, тому
+ * браузер ніколи не переходив за посиланням і просто лишався на пустій сторінці.
  */
 function respondToClick(result: RecordClickResult, reply: TrackingReply): string | undefined {
   const { pageContext, autoRedirect, redirectDelayMs } = result;
 
   if (autoRedirect && redirectDelayMs === 0) {
-    reply.redirect(pageContext.telegramUrl);
+    reply.redirect(302, pageContext.telegramUrl);
     return undefined;
   }
 
