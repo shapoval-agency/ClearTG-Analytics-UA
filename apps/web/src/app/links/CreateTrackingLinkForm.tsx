@@ -3,6 +3,19 @@
 import { useState } from 'react';
 import { createTrackingLinkAction } from '@/lib/actions';
 
+const AD_SOURCES = [
+  { value: 'meta', label: 'Meta (Facebook/Instagram Ads)', medium: 'cpc' },
+  { value: 'google', label: 'Google Ads', medium: 'cpc' },
+  { value: 'tiktok', label: 'TikTok Ads', medium: 'cpc' },
+  { value: 'telegram_ads', label: 'Telegram Ads', medium: 'cpc' },
+  { value: 'instagram', label: 'Instagram (органічно)', medium: 'social' },
+  { value: 'influencer', label: 'Інфлюенсер', medium: 'referral' },
+  { value: 'organic', label: 'Органіка / пряме посилання', medium: 'referral' },
+  { value: 'other', label: 'Інше…', medium: '' },
+] as const;
+
+type AdSourceValue = (typeof AD_SOURCES)[number]['value'];
+
 export function CreateTrackingLinkForm({
   channels,
   campaigns,
@@ -14,6 +27,8 @@ export function CreateTrackingLinkForm({
   const [channelId, setChannelId] = useState(channels[0]?.id ?? '');
   const [campaignId, setCampaignId] = useState(campaigns[0]?.id ?? '');
   const [linkMode, setLinkMode] = useState<'LANDING_PAGE' | 'SHORTLINK'>('LANDING_PAGE');
+  const [adSource, setAdSource] = useState<AdSourceValue>('meta');
+  const [customSource, setCustomSource] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -23,13 +38,17 @@ export function CreateTrackingLinkForm({
     e.preventDefault();
     setLoading(true);
     setError('');
+
+    const sourceMeta = AD_SOURCES.find((s) => s.value === adSource)!;
+    const utmSource = adSource === 'other' ? customSource.trim() : sourceMeta.value;
+
     const result = await createTrackingLinkAction({
       channelId,
       campaignId: linkMode === 'LANDING_PAGE' ? campaignId || undefined : undefined,
       name,
       linkMode,
-      utmSource: linkMode === 'LANDING_PAGE' ? 'meta' : 'organic',
-      utmMedium: linkMode === 'LANDING_PAGE' ? 'cpc' : 'social',
+      utmSource: utmSource || undefined,
+      utmMedium: sourceMeta.medium || undefined,
     });
     if (result?.error) {
       setError(result.error);
@@ -59,6 +78,30 @@ export function CreateTrackingLinkForm({
           <option value="LANDING_PAGE">Landing /l/ (Meta, Google, TikTok)</option>
           <option value="SHORTLINK">Shortlink /r/ (organic, influencer)</option>
         </select>
+      </div>
+      <div>
+        <label className="block text-sm text-slate-600 mb-1">Джерело реклами</label>
+        <select
+          className="w-full border rounded-lg px-3 py-2"
+          value={adSource}
+          onChange={(e) => setAdSource(e.target.value as AdSourceValue)}
+        >
+          {AD_SOURCES.map((s) => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+        <p className="text-xs text-slate-500 mt-1">
+          Визначає utm_source/utm_medium цього посилання — щоб у звітах бачити кожне джерело окремо
+          (TikTok окремо від Meta, окремо від органіки тощо).
+        </p>
+        {adSource === 'other' && (
+          <input
+            className="w-full border rounded-lg px-3 py-2 mt-2"
+            value={customSource}
+            onChange={(e) => setCustomSource(e.target.value)}
+            placeholder="Своя назва джерела (utm_source)"
+          />
+        )}
       </div>
       <div>
         <label className="block text-sm text-slate-600 mb-1">Канал</label>
