@@ -7,6 +7,7 @@ import { MembershipEventType, WorkspaceRole } from '@cleartg/database';
 import type { Context } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import { tryPublicAppUrl } from '../common/public-app-url';
+import { formatRecentSubscribersList } from '@cleartg/shared';
 
 const BIND_TTL_SEC = 60 * 60 * 24 * 7;
 
@@ -87,7 +88,8 @@ export class BotAdminService {
       .text('📊 Звіт за вчора', 'menu:report_yesterday')
       .text('📈 За 24 год', 'menu:report_24h')
       .row()
-      .text('📺 Мої канали', 'menu:channels');
+      .text('📺 Мої канали', 'menu:channels')
+      .text('👥 Останні підписники', 'menu:recent_subs');
 
     const app = tryPublicAppUrl(this.config);
     if (app) {
@@ -244,6 +246,43 @@ export class BotAdminService {
     });
   }
 
+  async sendRecentSubscribers(ctx: Context, telegramId: string, limit = 10) {
+    const user = await this.getLinkedUser(telegramId);
+    if (!user) {
+      await ctx.reply('Спочатку привʼяжіть бота до кабінету.');
+      return;
+    }
+
+    const wsIds = this.workspaceIdsForUser(user);
+    if (wsIds.length === 0) {
+      await ctx.reply('У вас немає доступних workspace.');
+      return;
+    }
+
+    const profiles = await this.prisma.subscriberProfile.findMany({
+      where: { workspaceId: { in: wsIds } },
+      include: {
+        channel: { select: { title: true } },
+        membershipEvent: { select: { telegramUsername: true } },
+        _count: { select: { unsubscribeEvents: true } },
+      },
+      orderBy: { subscribedAt: 'desc' },
+      take: limit,
+    });
+
+    const text = formatRecentSubscribersList(
+      profiles.map((p) => ({
+        username: p.membershipEvent.telegramUsername,
+        telegramUserId: p.telegramUserId,
+        channelTitle: p.channel.title,
+        subscribedAt: p.subscribedAt,
+        isActive: p._count.unsubscribeEvents === 0,
+      })),
+    );
+
+    await ctx.reply(text, { reply_markup: this.mainMenuKeyboard() });
+  }
+
   async lookupDossier(telegramId: string, targetUsername?: string, targetTelegramId?: string) {
     const user = await this.getLinkedUser(telegramId);
     if (!user) return null;
@@ -339,6 +378,32 @@ export class BotAdminService {
     }
   }
 
+  async notifyChannelDisconnected(telegramUserId: string, channelTitle: string, bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
+    try {
+      await bot.api.sendMessage(
+        parseInt(telegramUserId, 10),
+        `⚠️ Канал «${channelTitle}» відключено від ClearTG.\n\n` +
+          'Бота прибрано з адміністраторів (або знято потрібні права) — збір підписок/відписок зупинено.\n' +
+          'Щоб відновити, поверніть боту права адміністратора з можливістю «Додавання учасників».',
+      );
+    } catch {
+      /* user may not have started bot */
+    }
+  }
+
+  async notifyMissingInvitePermission(telegramUserId: string, channelTitle: string, bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
+    try {
+      await bot.api.sendMessage(
+        parseInt(telegramUserId, 10),
+        `⚠️ Бот доданий адміністратором каналу «${channelTitle}», але без права «Додавання учасників».\n\n` +
+          'Підписки й відписки вже фіксуються, але точні (per-click) invite-посилання для реклами створюватися не будуть.\n' +
+          'Відкрийте налаштування адміністратора бота в каналі й увімкніть це право.',
+      );
+    } catch {
+      /* user may not have started bot */
+    }
+  }
+
   async sendDailyReportsToAll(bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
     const users = await this.prisma.user.findMany({
       where: { telegramId: { not: null } },
@@ -371,6 +436,7 @@ export class BotAdminService {
       '/menu — головне меню\n' +
       '/report — звіт за вчора\n' +
       '/channels — канали\n' +
+      '/subscribers — останні підписники\n' +
       '/cabinet — посилання на кабінет\n\n' +
       `Кабінет: ${home}`
     );

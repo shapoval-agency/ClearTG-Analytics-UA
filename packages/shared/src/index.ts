@@ -7,3 +7,4 @@ export * from './google-ads';
 export * from './tiktok';
 export * from './link-mode';
 export * from './meta-capi';
+export * from './telegram-events';

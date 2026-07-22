@@ -9,7 +9,13 @@ import { LeadMagnetService } from '../lead-magnet/lead-magnet.service';
 import { InviteLinkService } from './invite-link.service';
 import { BotAdminService } from './bot-admin.service';
 import { tryPublicAppUrl } from '../common/public-app-url';
-import { hashExternalId } from '@cleartg/shared';
+import {
+  hashExternalId,
+  isTrackableChatType,
+  didBotBecomeAdmin,
+  didBotLoseAdmin,
+  isMissingInvitePermission,
+} from '@cleartg/shared';
 import { Bot, webhookCallback } from 'grammy';
 import { MembershipEventType, Prisma } from '@cleartg/database';
 
@@ -153,6 +159,10 @@ export class TelegramService implements OnModuleInit {
       await this.botAdmin.sendChannelsList(ctx, String(ctx.from?.id ?? ''));
     });
 
+    this.bot.command('subscribers', async (ctx) => {
+      await this.botAdmin.sendRecentSubscribers(ctx, String(ctx.from?.id ?? ''));
+    });
+
     this.bot.command('cabinet', async (ctx) => {
       const url = tryPublicAppUrl(this.config);
       if (!url) {
@@ -175,6 +185,8 @@ export class TelegramService implements OnModuleInit {
         await this.botAdmin.sendReportToChat(ctx, userId, '24h');
       } else if (action === 'channels') {
         await this.botAdmin.sendChannelsList(ctx, userId);
+      } else if (action === 'recent_subs') {
+        await this.botAdmin.sendRecentSubscribers(ctx, userId);
       } else if (action === 'cabinet') {
         const url = tryPublicAppUrl(this.config);
         await ctx.reply(
@@ -245,9 +257,11 @@ export class TelegramService implements OnModuleInit {
 
     this.bot.on('my_chat_member', async (ctx) => {
       const chat = ctx.myChatMember.chat;
-      if (chat.type !== 'channel') return;
+      if (!isTrackableChatType(chat.type)) return;
 
-      const newStatus = ctx.myChatMember.new_chat_member.status;
+      const oldStatus = ctx.myChatMember.old_chat_member.status;
+      const newMember = ctx.myChatMember.new_chat_member;
+      const newStatus = newMember.status;
       const isAdmin = newStatus === 'administrator';
       const telegramChatId = String(chat.id);
       const username = 'username' in chat ? chat.username ?? null : null;
@@ -282,6 +296,17 @@ export class TelegramService implements OnModuleInit {
         data: { botIsAdmin: isAdmin, title: chat.title ?? 'Channel', username },
       });
 
+      if (fromId && didBotBecomeAdmin({ oldStatus, newStatus })) {
+        const canInviteUsers = 'can_invite_users' in newMember ? newMember.can_invite_users : undefined;
+        if (isMissingInvitePermission({ status: newStatus, can_invite_users: canInviteUsers })) {
+          await this.botAdmin.notifyMissingInvitePermission(fromId, title, this.bot!);
+        }
+      }
+
+      if (fromId && didBotLoseAdmin({ oldStatus, newStatus })) {
+        await this.botAdmin.notifyChannelDisconnected(fromId, existing?.title ?? title, this.bot!);
+      }
+
       this.logger.log(`Bot status in channel ${chat.id}: ${newStatus}`, 'Telegram');
     });
 
@@ -300,7 +325,7 @@ export class TelegramService implements OnModuleInit {
     update: { update_id: number };
   }) {
     const { chatMember } = ctx;
-    if (chatMember.chat.type !== 'channel') return;
+    if (!isTrackableChatType(chatMember.chat.type)) return;
 
     const channel = await this.prisma.channel.findFirst({
       where: { telegramChatId: String(chatMember.chat.id) },

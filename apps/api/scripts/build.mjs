@@ -15,4 +15,7 @@ if (process.env.VERCEL) {
 }
 
 execSync('pnpm --filter @cleartg/database generate', { stdio: 'inherit' });
+// @cleartg/shared ships as compiled dist/ (gitignored) — must rebuild it on every
+// API build, otherwise the API silently runs against a stale/missing dist here.
+execSync('pnpm --filter @cleartg/shared build', { stdio: 'inherit' });
 execSync('nest build', { stdio: 'inherit', cwd: join(__dirname, '..') });
