@@ -313,6 +313,22 @@ export class TelegramService implements OnModuleInit {
     this.bot.on('chat_member', async (ctx) => {
       await this.handleChatMemberUpdate(ctx);
     });
+
+    // Перейменування групи/супергрупи — Telegram шле службове повідомлення
+    // new_chat_title (на відміну від my_chat_member, це не зміна прав бота).
+    // Для каналів такої події не існує — там назва оновлюється лише при
+    // наступній зміні прав бота, або вручну кнопкою «Синхронізувати» в кабінеті.
+    this.bot.on('message:new_chat_title', async (ctx) => {
+      const telegramChatId = String(ctx.chat.id);
+      const newTitle = ctx.message.new_chat_title;
+      const result = await this.prisma.channel.updateMany({
+        where: { telegramChatId },
+        data: { title: newTitle },
+      });
+      if (result.count > 0) {
+        this.logger.log(`Channel ${telegramChatId} renamed to "${newTitle}"`, 'Telegram');
+      }
+    });
   }
 
   private async handleChatMemberUpdate(ctx: {
