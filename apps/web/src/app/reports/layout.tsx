@@ -4,6 +4,7 @@ const tabs = [
   { href: '/reports/overview', label: 'Огляд' },
   { href: '/reports/sources', label: 'Джерела та CR' },
   { href: '/reports/subscriptions', label: 'Підписки / Відписки' },
+  { href: '/reports/bot-starts', label: 'Переходи в бота' },
   { href: '/reports/retention', label: 'Retention' },
   { href: '/reports/attribution-confidence', label: 'Атрибуція' },
   { href: '/reports/pixel-delivery', label: 'Pixel delivery' },

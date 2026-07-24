@@ -501,4 +501,45 @@ export class DashboardService {
       })),
     };
   }
+
+  /**
+   * Блок 1.2 ТЗ: переходи в бота клієнта. Клік (ClickEvent) записується завжди
+   * при переході за посиланням; сюди потрапляють лише ті, хто дійшов до /start —
+   * різниця між рядками тут і кліками по відповідній посиланню й показує
+   * "скільки дійшло / скільки натиснуло Старт" (п.10).
+   */
+  async getBotStartFeed(workspaceId: string, limit = 100) {
+    const events = await this.prisma.botStartEvent.findMany({
+      where: { workspaceId },
+      include: {
+        botConnection: { select: { botUsername: true } },
+        clickEvent: {
+          select: {
+            utmSource: true,
+            utmMedium: true,
+            utmCampaign: true,
+            utmContent: true,
+            trackingLink: { select: { slug: true, name: true } },
+          },
+        },
+      },
+      orderBy: { occurredAt: 'desc' },
+      take: limit,
+    });
+
+    return events.map((e) => ({
+      id: e.id,
+      telegramUserId: e.telegramUserId,
+      telegramUsername: e.telegramUsername,
+      botUsername: e.botConnection.botUsername,
+      status: e.status,
+      occurredAt: e.occurredAt,
+      trackingLinkSlug: e.clickEvent?.trackingLink.slug ?? null,
+      trackingLinkName: e.clickEvent?.trackingLink.name ?? null,
+      utmSource: e.clickEvent?.utmSource ?? null,
+      utmMedium: e.clickEvent?.utmMedium ?? null,
+      utmCampaign: e.clickEvent?.utmCampaign ?? null,
+      utmContent: e.clickEvent?.utmContent ?? null,
+    }));
+  }
 }

@@ -22,6 +22,7 @@ import { AuthModule } from './auth/auth.module';
 import { RetentionModule } from './retention/retention.module';
 import { LeadMagnetModule } from './lead-magnet/lead-magnet.module';
 import { AgencyModule } from './agency/agency.module';
+import { ClientBotModule } from './client-bot/client-bot.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -57,6 +58,7 @@ import { HealthController } from './health.controller';
     RetentionModule,
     LeadMagnetModule,
     AgencyModule,
+    ClientBotModule,
   ],
   controllers: [HealthController],
 })

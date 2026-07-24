@@ -32,11 +32,13 @@ export default async function LinksPage() {
   let links: TrackingLink[] = [];
   let channels: Array<{ id: string; title: string }> = [];
   let campaigns: Array<{ id: string; name: string }> = [];
+  let botConnections: Array<{ id: string; botUsername: string; isActive: boolean }> = [];
   try {
-    [links, channels, campaigns] = await Promise.all([
+    [links, channels, campaigns, botConnections] = await Promise.all([
       api<TrackingLink[]>('/api/tracking-links'),
       api<Array<{ id: string; title: string }>>('/api/channels'),
       api<Array<{ id: string; name: string }>>('/api/campaigns'),
+      api<Array<{ id: string; botUsername: string; isActive: boolean }>>('/api/client-bots'),
     ]);
   } catch { /* empty */ }
 
@@ -53,7 +55,7 @@ export default async function LinksPage() {
               {' '}у другому терміналі — отримаєте публічний https://….loca.lt URL для посилань.
             </div>
           )}
-      <CreateTrackingLinkForm channels={channels} campaigns={campaigns} />
+      <CreateTrackingLinkForm channels={channels} campaigns={campaigns} botConnections={botConnections} />
       {links.length === 0 ? (
         <div className="bg-white rounded-xl border p-8 text-center text-slate-500">
           <p>Створіть перше tracking-посилання вище.</p>

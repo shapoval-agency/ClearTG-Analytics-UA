@@ -51,6 +51,15 @@ export class TrackingService {
       throw new BadRequestException('Campaign not found in workspace');
     }
 
+    if (dto.botConnectionId) {
+      const botConnection = await this.prisma.telegramBotConnection.findFirst({
+        where: { id: dto.botConnectionId, workspaceId },
+      });
+      if (!botConnection) {
+        throw new BadRequestException('Bot connection not found in workspace');
+      }
+    }
+
     const platform = campaign?.adPlatform ?? null;
     const linkMode: LinkMode = dto.linkMode ?? resolveDefaultLinkMode(platform);
     const validation = validateLinkModeForPlatform(linkMode, platform);
@@ -64,6 +73,7 @@ export class TrackingService {
         workspaceId,
         channelId: dto.channelId,
         campaignId: dto.campaignId,
+        botConnectionId: dto.botConnectionId,
         slug,
         name: dto.name,
         linkMode,
@@ -134,6 +144,7 @@ export class TrackingService {
       include: {
         channel: true,
         campaign: true,
+        botConnection: { select: { botUsername: true } },
         workspace: { select: { privacyPolicyUrl: true } },
       },
     });
@@ -299,6 +310,7 @@ export class TrackingService {
       campaignId: string | null;
       id: string;
       channel: { username: string | null; telegramChatId: string };
+      botConnection: { botUsername: string } | null;
     },
     clickId: string,
   ): Promise<string> {
@@ -326,6 +338,11 @@ export class TrackingService {
         return link.destinationUrl ?? `https://t.me/${link.channel.username ?? 'channel'}`;
       case 'BOT_START':
         return `https://t.me/${process.env.TELEGRAM_BOT_USERNAME ?? 'cleartg_bot'}?start=click_${clickId}`;
+      case 'CLIENT_BOT_START':
+        // Блок 1.2 ТЗ: перехід у бота КЛІЄНТА (не наш), короткий код замість
+        // повного набору UTM (ліміт Telegram — 64 символи на payload).
+        if (!link.botConnection) return 'https://t.me';
+        return `https://t.me/${link.botConnection.botUsername}?start=click_${clickId}`;
       case 'EXTERNAL_URL':
         return link.destinationUrl ?? 'https://t.me';
       case 'PERSONAL_CHAT':

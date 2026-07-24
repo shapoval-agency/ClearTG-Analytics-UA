@@ -21,6 +21,10 @@ export class CreateTrackingLinkDto {
 
   @IsOptional()
   @IsString()
+  botConnectionId?: string;
+
+  @IsOptional()
+  @IsString()
   name?: string;
 
   @IsOptional()

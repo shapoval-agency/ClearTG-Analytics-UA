@@ -20,9 +20,11 @@ type AdSourceValue = (typeof AD_SOURCES)[number]['value'];
 export function CreateTrackingLinkForm({
   channels,
   campaigns,
+  botConnections = [],
 }: {
   channels: Array<{ id: string; title: string }>;
   campaigns: Array<{ id: string; name: string }>;
+  botConnections?: Array<{ id: string; botUsername: string; isActive: boolean }>;
 }) {
   const [name, setName] = useState('');
   const [channelId, setChannelId] = useState(channels[0]?.id ?? '');
@@ -30,8 +32,9 @@ export function CreateTrackingLinkForm({
   const [linkMode, setLinkMode] = useState<'LANDING_PAGE' | 'SHORTLINK'>('LANDING_PAGE');
   const [adSource, setAdSource] = useState<AdSourceValue>('meta');
   const [customSource, setCustomSource] = useState('');
-  const [destination, setDestination] = useState<'channel' | 'personal'>('channel');
+  const [destination, setDestination] = useState<'channel' | 'personal' | 'bot'>('channel');
   const [personalUsername, setPersonalUsername] = useState('');
+  const [botConnectionId, setBotConnectionId] = useState(botConnections[0]?.id ?? '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -46,8 +49,14 @@ export function CreateTrackingLinkForm({
     const utmSource = adSource === 'other' ? customSource.trim() : sourceMeta.value;
 
     const isPersonal = destination === 'personal';
+    const isBot = destination === 'bot';
     if (isPersonal && !personalUsername.trim()) {
       setError('Вкажіть username особистого акаунта');
+      setLoading(false);
+      return;
+    }
+    if (isBot && !botConnectionId) {
+      setError('Спочатку підключіть бота на сторінці «Свій бот»');
       setLoading(false);
       return;
     }
@@ -63,6 +72,13 @@ export function CreateTrackingLinkForm({
         ? {
             destinationMode: 'PERSONAL_CHAT',
             destinationUrl: `https://t.me/${personalUsername.trim().replace(/^@/, '')}`,
+            usePerClickInvite: false,
+          }
+        : {}),
+      ...(isBot
+        ? {
+            destinationMode: 'CLIENT_BOT_START',
+            botConnectionId,
             usePerClickInvite: false,
           }
         : {}),
@@ -101,10 +117,11 @@ export function CreateTrackingLinkForm({
         <select
           className="w-full border rounded-lg px-3 py-2"
           value={destination}
-          onChange={(e) => setDestination(e.target.value as 'channel' | 'personal')}
+          onChange={(e) => setDestination(e.target.value as 'channel' | 'personal' | 'bot')}
         >
           <option value="channel">Канал (за замовчуванням)</option>
           <option value="personal">Особистий акаунт (особисті повідомлення)</option>
+          <option value="bot">Свій бот (переходи в бота, /start з міткою)</option>
         </select>
         {destination === 'personal' ? (
           <>
@@ -120,6 +137,30 @@ export function CreateTrackingLinkForm({
               немає і не буде.
             </p>
           </>
+        ) : null}
+        {destination === 'bot' ? (
+          botConnections.length === 0 ? (
+            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-2 mt-2">
+              Немає підключених ботів. Спочатку підключіть бота на сторінці{' '}
+              <a href="/integrations/own-bot" className="underline">«Свій бот»</a>.
+            </p>
+          ) : (
+            <>
+              <select
+                className="w-full border rounded-lg px-3 py-2 mt-2"
+                value={botConnectionId}
+                onChange={(e) => setBotConnectionId(e.target.value)}
+              >
+                {botConnections.map((b) => (
+                  <option key={b.id} value={b.id}>@{b.botUsername}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500 mt-1">
+                Точна атрибуція: коли людина натисне «Старт», Telegram сам передасть нам мітку
+                разом з її ідентифікатором — без розрахунку і без похибки.
+              </p>
+            </>
+          )
         ) : null}
       </div>
       <div>

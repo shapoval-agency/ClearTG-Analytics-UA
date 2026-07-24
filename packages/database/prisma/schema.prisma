@@ -70,6 +70,7 @@ model Workspace {
   auditLogs            AuditLog[]
   apiKeys              ApiKey[]
   telegramBotConnections TelegramBotConnection[]
+  botStartEvents       BotStartEvent[]
   dataDeletionRequests DataDeletionRequest[]
   dataExportRequests   DataExportRequest[]
 
@@ -126,16 +127,49 @@ model Channel {
   @@map("channels")
 }
 
+// Клієнтський бот, підключений для відстеження переходів (блок 1.2 ТЗ) —
+// НЕ той самий бот, що адмінить канали (TelegramService/BOT_TOKEN).
 model TelegramBotConnection {
-  id          String   @id @default(cuid())
-  workspaceId String   @map("workspace_id")
-  botUsername String   @map("bot_username")
-  isActive    Boolean  @default(true) @map("is_active")
-  connectedAt DateTime @default(now()) @map("connected_at")
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  botUsername String    @map("bot_username")
+  tokenEnc    String    @map("token_enc")
+  isActive    Boolean   @default(true) @map("is_active")
+  lastError   String?   @map("last_error")
+  lastErrorAt DateTime? @map("last_error_at")
+  connectedAt DateTime  @default(now()) @map("connected_at")
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  trackingLinks TrackingLink[]
+  startEvents BotStartEvent[]
 
   @@map("telegram_bot_connections")
+}
+
+enum BotStartEventStatus {
+  ACTIVE
+  BLOCKED
+}
+
+// Один рядок на пару (бот клієнта, telegram user) — повторний /start не дублює запис,
+// блокування/розблокування бота лише міняє status на тому самому рядку.
+model BotStartEvent {
+  id               String              @id @default(cuid())
+  workspaceId      String              @map("workspace_id")
+  botConnectionId  String              @map("bot_connection_id")
+  clickEventId     String?             @map("click_event_id")
+  telegramUserId   String              @map("telegram_user_id")
+  telegramUsername String?             @map("telegram_username")
+  status           BotStartEventStatus @default(ACTIVE)
+  occurredAt       DateTime            @default(now()) @map("occurred_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  workspace     Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botConnection TelegramBotConnection @relation(fields: [botConnectionId], references: [id], onDelete: Cascade)
+  clickEvent    ClickEvent?           @relation(fields: [clickEventId], references: [id], onDelete: SetNull)
+
+  @@unique([botConnectionId, telegramUserId])
+  @@map("bot_start_events")
 }
 
 // ─── Campaigns & Tracking ───────────────────────────────────
@@ -164,6 +198,7 @@ enum DestinationMode {
   BOT_START
   EXTERNAL_URL
   PERSONAL_CHAT
+  CLIENT_BOT_START
 }
 
 enum LinkMode {
@@ -213,6 +248,7 @@ model TrackingLink {
   workspaceId      String          @map("workspace_id")
   channelId        String          @map("channel_id")
   campaignId       String?         @map("campaign_id")
+  botConnectionId  String?         @map("bot_connection_id")
   slug             String          @unique
   name             String?
   linkMode         LinkMode        @default(LANDING_PAGE) @map("link_mode")
@@ -235,12 +271,13 @@ model TrackingLink {
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
 
-  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  campaign     Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  clickEvents  ClickEvent[]
-  inviteLinks  InviteLink[]
-  attributions Attribution[]
+  workspace     Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel       Channel                @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  campaign      Campaign?              @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  botConnection TelegramBotConnection? @relation(fields: [botConnectionId], references: [id], onDelete: SetNull)
+  clickEvents   ClickEvent[]
+  inviteLinks   InviteLink[]
+  attributions  Attribution[]
 
   @@map("tracking_links")
 }
@@ -293,6 +330,7 @@ model ClickEvent {
   trackingLink TrackingLink @relation(fields: [trackingLinkId], references: [id], onDelete: Cascade)
   inviteLinks  InviteLink[]
   attributions Attribution[]
+  botStartEvents BotStartEvent[]
 
   @@index([workspaceId, clickedAt])
   @@index([trackingLinkId])

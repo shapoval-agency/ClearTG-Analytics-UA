@@ -171,6 +171,7 @@ export async function createTrackingLinkAction(data: {
   destinationMode?: string;
   destinationUrl?: string;
   usePerClickInvite?: boolean;
+  botConnectionId?: string;
 }) {
   const headers = await authHeaders();
   if (!headers) return { error: 'Not authenticated' };
@@ -349,4 +350,31 @@ export async function testTikTokEventAction() {
   });
   const body = await res.json();
   return { ok: res.ok, body };
+}
+
+export async function createClientBotAction(token: string) {
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
+
+  const res = await fetch(`${API_URL}/api/client-bots`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ token }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return { error: (body as { message?: string | string[] }).message?.toString() ?? 'Не вдалося підключити бота' };
+  }
+  revalidatePath('/integrations/own-bot');
+  return { ok: true };
+}
+
+/** Void return: bound directly as a <form action> on the connected-bots list. */
+export async function deleteClientBotAction(id: string): Promise<void> {
+  const headers = await authHeaders();
+  if (!headers) return;
+
+  await fetch(`${API_URL}/api/client-bots/${id}`, { method: 'DELETE', headers });
+  revalidatePath('/integrations/own-bot');
 }

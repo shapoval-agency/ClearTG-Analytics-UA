@@ -69,6 +69,12 @@ export class DashboardController {
   }
 
   @RequiresWorkspace()
+  @Get('bot-starts')
+  botStartFeed(@WorkspaceId() workspaceId: string) {
+    return this.dashboard.getBotStartFeed(workspaceId);
+  }
+
+  @RequiresWorkspace()
   @Get('daily-digest')
   dailyDigest(
     @WorkspaceId() workspaceId: string,
