@@ -22,19 +22,32 @@ export class ClientBotRuntimeService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    const connections = await this.prisma.telegramBotConnection.findMany({
-      where: { isActive: true },
-    });
-    for (const connection of connections) {
-      try {
-        const token = this.crypto.decrypt(connection.tokenEnc);
-        await this.startBot(connection.id, token);
-      } catch (err) {
-        this.logger.error(
-          `Не вдалося запустити клієнтський бот ${connection.id}: ${err instanceof Error ? err.message : err}`,
-          'ClientBot',
-        );
+    // Весь метод обгорнутий у try/catch навмисно: якщо БД ще не має потрібних
+    // колонок/таблиць (наприклад, забули prisma db push перед рестартом) або
+    // тимчасово недоступна — ця фіча просто не піднімається, а НЕ валить весь
+    // застосунок при старті. Саме так впав прод: findMany() був поза catch.
+    try {
+      const connections = await this.prisma.telegramBotConnection.findMany({
+        where: { isActive: true },
+      });
+      for (const connection of connections) {
+        try {
+          const token = this.crypto.decrypt(connection.tokenEnc);
+          await this.startBot(connection.id, token);
+        } catch (err) {
+          this.logger.error(
+            `Не вдалося запустити клієнтський бот ${connection.id}: ${err instanceof Error ? err.message : err}`,
+            'ClientBot',
+          );
+        }
       }
+    } catch (err) {
+      this.logger.error(
+        `Не вдалося завантажити список клієнтських ботів (можлива причина: схема БД не оновлена — prisma db push): ${
+          err instanceof Error ? err.message : err
+        }`,
+        'ClientBot',
+      );
     }
   }
 
