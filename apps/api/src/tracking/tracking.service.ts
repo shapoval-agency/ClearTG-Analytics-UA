@@ -328,6 +328,10 @@ export class TrackingService {
         return `https://t.me/${process.env.TELEGRAM_BOT_USERNAME ?? 'cleartg_bot'}?start=click_${clickId}`;
       case 'EXTERNAL_URL':
         return link.destinationUrl ?? 'https://t.me';
+      case 'PERSONAL_CHAT':
+        // Особистий акаунт — не бот, доступу до листування нема і не буде.
+        // Фіксуємо лише сам факт кліку/переходу, як і для EXTERNAL_URL.
+        return link.destinationUrl ?? 'https://t.me';
       default:
         return link.landingPostUrl ?? 'https://t.me';
     }

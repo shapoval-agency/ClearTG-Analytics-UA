@@ -168,6 +168,9 @@ export async function createTrackingLinkAction(data: {
   utmMedium?: string;
   utmCampaign?: string;
   utmContent?: string;
+  destinationMode?: string;
+  destinationUrl?: string;
+  usePerClickInvite?: boolean;
 }) {
   const headers = await authHeaders();
   if (!headers) return { error: 'Not authenticated' };

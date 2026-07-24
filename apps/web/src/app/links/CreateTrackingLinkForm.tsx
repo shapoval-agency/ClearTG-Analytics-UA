@@ -30,6 +30,8 @@ export function CreateTrackingLinkForm({
   const [linkMode, setLinkMode] = useState<'LANDING_PAGE' | 'SHORTLINK'>('LANDING_PAGE');
   const [adSource, setAdSource] = useState<AdSourceValue>('meta');
   const [customSource, setCustomSource] = useState('');
+  const [destination, setDestination] = useState<'channel' | 'personal'>('channel');
+  const [personalUsername, setPersonalUsername] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -43,6 +45,13 @@ export function CreateTrackingLinkForm({
     const sourceMeta = AD_SOURCES.find((s) => s.value === adSource)!;
     const utmSource = adSource === 'other' ? customSource.trim() : sourceMeta.value;
 
+    const isPersonal = destination === 'personal';
+    if (isPersonal && !personalUsername.trim()) {
+      setError('Вкажіть username особистого акаунта');
+      setLoading(false);
+      return;
+    }
+
     const result = await createTrackingLinkAction({
       channelId,
       campaignId: linkMode === 'LANDING_PAGE' ? campaignId || undefined : undefined,
@@ -50,6 +59,13 @@ export function CreateTrackingLinkForm({
       linkMode,
       utmSource: utmSource || undefined,
       utmMedium: sourceMeta.medium || undefined,
+      ...(isPersonal
+        ? {
+            destinationMode: 'PERSONAL_CHAT',
+            destinationUrl: `https://t.me/${personalUsername.trim().replace(/^@/, '')}`,
+            usePerClickInvite: false,
+          }
+        : {}),
     });
     if (result?.error) {
       setError(result.error);
@@ -79,6 +95,32 @@ export function CreateTrackingLinkForm({
           <option value="LANDING_PAGE">Landing /l/ (Meta, Google, TikTok)</option>
           <option value="SHORTLINK">Shortlink /r/ (organic, influencer)</option>
         </select>
+      </div>
+      <div>
+        <label className="block text-sm text-slate-600 mb-1">Куди веде посилання</label>
+        <select
+          className="w-full border rounded-lg px-3 py-2"
+          value={destination}
+          onChange={(e) => setDestination(e.target.value as 'channel' | 'personal')}
+        >
+          <option value="channel">Канал (за замовчуванням)</option>
+          <option value="personal">Особистий акаунт (особисті повідомлення)</option>
+        </select>
+        {destination === 'personal' ? (
+          <>
+            <input
+              className="w-full border rounded-lg px-3 py-2 mt-2"
+              value={personalUsername}
+              onChange={(e) => setPersonalUsername(e.target.value)}
+              placeholder="@username особистого акаунта"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Ми бачимо тільки сам факт переходу за посиланням. Що людина написала, чи відповіли їй
+              і чим усе скінчилось — ми не бачимо: особистий акаунт не бот, доступу до листування
+              немає і не буде.
+            </p>
+          </>
+        ) : null}
       </div>
       <div>
         <label className="block text-sm text-slate-600 mb-1">Джерело реклами</label>

@@ -163,6 +163,7 @@ enum DestinationMode {
   INVITE_LINK
   BOT_START
   EXTERNAL_URL
+  PERSONAL_CHAT
 }
 
 enum LinkMode {
