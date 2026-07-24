@@ -1,5 +1,6 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
+import { formatDateUk } from '@/lib/labels';
 
 
 interface AuditEntry {
@@ -36,7 +37,7 @@ export default async function AuditLogPage() {
               <tr key={l.id} className="border-b last:border-0">
                 <td className="p-3">{l.action}</td>
                 <td className="p-3">{l.entityType ?? '—'} {l.entityId ? `(${l.entityId.slice(0, 8)}…)` : ''}</td>
-                <td className="p-3">{new Date(l.createdAt).toLocaleString('uk-UA')}</td>
+                <td className="p-3">{formatDateUk(l.createdAt)}</td>
               </tr>
             ))}
           </tbody>

@@ -7,7 +7,7 @@ import { MembershipEventType, WorkspaceRole } from '@cleartg/database';
 import type { Context } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import { tryPublicAppUrl } from '../common/public-app-url';
-import { formatRecentSubscribersList } from '@cleartg/shared';
+import { formatRecentSubscribersList, kyivDayStart } from '@cleartg/shared';
 
 const BIND_TTL_SEC = 60 * 60 * 24 * 7;
 
@@ -129,12 +129,11 @@ export class BotAdminService {
     let label: string;
 
     if (mode === 'yesterday') {
-      from = new Date(now);
-      from.setDate(from.getDate() - 1);
-      from.setHours(0, 0, 0, 0);
-      to = new Date(from);
-      to.setDate(to.getDate() + 1);
-      label = from.toLocaleDateString('uk-UA');
+      // Межі "вчора" — за київською добою, а не за TZ процесу (зазвичай UTC),
+      // інакше підписки біля півночі потрапляють не в той день.
+      from = kyivDayStart(now, 1);
+      to = kyivDayStart(now, 0);
+      label = from.toLocaleDateString('uk-UA', { timeZone: 'Europe/Kyiv' });
     } else {
       from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       to = now;
@@ -326,7 +325,7 @@ export class BotAdminService {
       `Канал: ${profile.channel.title}\n` +
       `Username: ${profile.membershipEvent.telegramUsername ? `@${profile.membershipEvent.telegramUsername}` : '—'}\n` +
       `ID: ${profile.telegramUserId}\n` +
-      `Підписка: ${profile.subscribedAt.toLocaleString('uk-UA')}\n` +
+      `Підписка: ${profile.subscribedAt.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' })}\n` +
       `Статус: ${active ? '✅ у каналі' : '❌ відписався'}\n` +
       (attr
         ? `\nДжерело: ${this.attrLabel(attr.attributionType)} (${Math.round(attr.confidenceScore * 100)}%)\n` +

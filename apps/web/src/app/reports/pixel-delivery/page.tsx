@@ -1,5 +1,6 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
+import { formatDateUk } from '@/lib/labels';
 
 
 interface DeliveryLog {
@@ -41,7 +42,7 @@ export default async function PixelDeliveryPage() {
                 <td className="p-3">{l.platform}</td>
                 <td className="p-3">{l.status}</td>
                 <td className="p-3">{l.responseStatus ?? '—'}</td>
-                <td className="p-3">{new Date(l.deliveredAt).toLocaleString('uk-UA')}</td>
+                <td className="p-3">{formatDateUk(l.deliveredAt)}</td>
               </tr>
             ))}
           </tbody>

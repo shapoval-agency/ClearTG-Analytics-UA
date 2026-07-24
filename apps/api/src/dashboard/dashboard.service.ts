@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AttributionService } from '../attribution/attribution.service';
 import { ConversionService } from '../conversion/conversion.service';
 import { MembershipEventType } from '@cleartg/database';
+import { kyivDayStart } from '@cleartg/shared';
 
 @Injectable()
 export class DashboardService {
@@ -456,10 +457,11 @@ export class DashboardService {
   }
 
   async getDailyDigest(workspaceId: string, date?: string) {
-    const day = date ? new Date(date) : new Date();
-    day.setHours(0, 0, 0, 0);
-    const next = new Date(day);
-    next.setDate(next.getDate() + 1);
+    const anchor = date ? new Date(date) : new Date();
+    // Межі доби рахуємо за київським часом, а не за TZ процесу (зазвичай UTC на
+    // сервері) — інакше події біля півночі потрапляють не в той день.
+    const day = kyivDayStart(anchor, 0);
+    const next = kyivDayStart(anchor, -1);
 
     const [subs, unsubs, clicks, attributions] = await Promise.all([
       this.prisma.membershipEvent.count({
@@ -489,7 +491,10 @@ export class DashboardService {
     ]);
 
     return {
-      date: day.toISOString().slice(0, 10),
+      // day/next — UTC-інстанти півночі за Києвом; для лейбла дати беремо
+      // календарний день анкора САМЕ за київським часом, а не UTC-зріз
+      // цього інстанту (він через зсув може показати попередню дату).
+      date: anchor.toLocaleDateString('en-CA', { timeZone: 'Europe/Kyiv' }),
       subscriptions: subs,
       unsubscribes: unsubs,
       netGrowth: subs - unsubs,

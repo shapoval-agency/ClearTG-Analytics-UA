@@ -17,6 +17,11 @@ export function confidenceLabelUk(score: number): string {
   return 'невідомо';
 }
 
+/**
+ * 'uk-UA' задає лише мову форматування (крапки, порядок), а НЕ часовий пояс —
+ * без явного timeZone Vercel/сервер показують свій власний час (зазвичай UTC),
+ * що для Києва (UTC+2/+3) дає розбіжність на 2-3 години з реальним часом.
+ */
 export function formatDateUk(d: string | Date) {
   return new Date(d).toLocaleString('uk-UA', {
     day: '2-digit',
@@ -24,6 +29,7 @@ export function formatDateUk(d: string | Date) {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: 'Europe/Kyiv',
   });
 }
 

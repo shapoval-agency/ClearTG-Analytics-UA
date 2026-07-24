@@ -1,6 +1,7 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import { deleteClientBotAction } from '@/lib/actions';
+import { formatDateUk } from '@/lib/labels';
 import { ConnectClientBotForm } from './ConnectClientBotForm';
 
 interface ClientBotConnection {
@@ -48,7 +49,7 @@ export default async function OwnBotPage() {
               <div>
                 <p className="font-medium">@{c.botUsername}</p>
                 <p className="text-xs text-slate-500 mt-1">
-                  Підключено: {new Date(c.connectedAt).toLocaleString('uk-UA')}
+                  Підключено: {formatDateUk(c.connectedAt)}
                 </p>
                 {!c.isActive && c.lastError && (
                   <p className="text-xs text-red-600 mt-1">Помилка: {c.lastError}</p>
