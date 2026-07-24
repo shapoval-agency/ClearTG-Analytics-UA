@@ -374,6 +374,8 @@ model MembershipEvent {
   eventType         MembershipEventType @map("event_type")
   telegramUserId    String              @map("telegram_user_id")
   telegramUsername  String?             @map("telegram_username")
+  telegramFirstName String?             @map("telegram_first_name")
+  telegramLastName  String?             @map("telegram_last_name")
   inviteLinkId      String?             @map("invite_link_id")
   occurredAt        DateTime            @default(now()) @map("occurred_at")
   rawUpdateId       String?             @map("raw_update_id")
@@ -463,6 +465,9 @@ model UnsubscribeEvent {
   channelId           String   @map("channel_id")
   subscriberProfileId String?  @map("subscriber_profile_id")
   telegramUserId      String   @map("telegram_user_id")
+  telegramUsername    String?  @map("telegram_username")
+  telegramFirstName   String?  @map("telegram_first_name")
+  telegramLastName    String?  @map("telegram_last_name")
   occurredAt          DateTime @default(now()) @map("occurred_at")
 
   workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)

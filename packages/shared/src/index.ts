@@ -10,3 +10,4 @@ export * from './meta-capi';
 export * from './telegram-events';
 export * from './client-bot-events';
 export * from './kyiv-time';
+export * from './channel-digest';

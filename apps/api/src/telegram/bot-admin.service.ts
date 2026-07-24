@@ -7,7 +7,7 @@ import { MembershipEventType, WorkspaceRole } from '@cleartg/database';
 import type { Context } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import { tryPublicAppUrl } from '../common/public-app-url';
-import { formatRecentSubscribersList, kyivDayStart } from '@cleartg/shared';
+import { formatRecentSubscribersList, formatChannelDigest, kyivDayStart, type DigestPersonRow } from '@cleartg/shared';
 
 const BIND_TTL_SEC = 60 * 60 * 24 * 7;
 
@@ -122,68 +122,91 @@ export class BotAdminService {
     });
   }
 
-  async buildDigest(workspaceIds: string[], mode: 'yesterday' | '24h') {
+  /** Одне повідомлення на кожен канал, де була активність (підписки/відписки) за період. */
+  async buildChannelDigests(workspaceIds: string[], mode: 'yesterday' | '24h'): Promise<string[]> {
     const now = new Date();
     let from: Date;
     let to: Date;
-    let label: string;
 
     if (mode === 'yesterday') {
       // Межі "вчора" — за київською добою, а не за TZ процесу (зазвичай UTC),
       // інакше підписки біля півночі потрапляють не в той день.
       from = kyivDayStart(now, 1);
       to = kyivDayStart(now, 0);
-      label = from.toLocaleDateString('uk-UA', { timeZone: 'Europe/Kyiv' });
     } else {
       from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       to = now;
-      label = 'останні 24 год';
     }
 
-    const where = { workspaceId: { in: workspaceIds } };
-    const [subs, unsubs, clicks] = await Promise.all([
-      this.prisma.membershipEvent.count({
-        where: {
-          ...where,
-          eventType: MembershipEventType.SUBSCRIBE,
-          occurredAt: { gte: from, lt: to },
-        },
-      }),
-      this.prisma.unsubscribeEvent.count({
-        where: { ...where, occurredAt: { gte: from, lt: to } },
-      }),
-      this.prisma.clickEvent.count({
-        where: { ...where, clickedAt: { gte: from, lt: to } },
-      }),
-    ]);
-
-    const attributions = await this.prisma.attribution.groupBy({
-      by: ['attributionType'],
-      where: {
-        workspaceId: { in: workspaceIds },
-        membershipEvent: {
-          eventType: MembershipEventType.SUBSCRIBE,
-          occurredAt: { gte: from, lt: to },
-        },
-      },
-      _count: true,
+    const channels = await this.prisma.channel.findMany({
+      where: { workspaceId: { in: workspaceIds }, isActive: true },
     });
 
-    const sourceLines = attributions
-      .map((a) => `  • ${this.attrLabel(a.attributionType)}: ${a._count}`)
-      .join('\n');
+    const messages: string[] = [];
 
-    const dash = this.cabinetUrl('/dashboard');
-    return (
-      `📊 Звіт (${label})\n\n` +
-      `➕ Підписки: ${subs}\n` +
-      `➖ Відписки: ${unsubs}\n` +
-      `📈 Чистий приріст: ${subs - unsubs}\n` +
-      `🔗 Кліки (реклама): ${clicks}\n` +
-      (clicks > 0 ? `🎯 CR клік→підписка: ${((subs / clicks) * 100).toFixed(1)}%\n` : '') +
-      (sourceLines ? `\nДжерела:\n${sourceLines}` : '') +
-      (dash ? `\n\n🖥 Детальніше: ${dash}` : '')
-    );
+    for (const channel of channels) {
+      const [subs, unsubs] = await Promise.all([
+        this.prisma.membershipEvent.findMany({
+          where: {
+            channelId: channel.id,
+            eventType: MembershipEventType.SUBSCRIBE,
+            occurredAt: { gte: from, lt: to },
+          },
+          include: { attribution: { include: { trackingLink: true } } },
+        }),
+        this.prisma.unsubscribeEvent.findMany({
+          where: { channelId: channel.id, occurredAt: { gte: from, lt: to } },
+          include: {
+            subscriberProfile: {
+              include: { membershipEvent: { include: { attribution: { include: { trackingLink: true } } } } },
+            },
+          },
+        }),
+      ]);
+
+      if (subs.length === 0 && unsubs.length === 0) continue;
+
+      const totalActive = await this.prisma.subscriberProfile.count({
+        where: { channelId: channel.id, unsubscribeEvents: { none: {} } },
+      });
+
+      const subscriberRows: DigestPersonRow[] = subs.map((s) => ({
+        telegramUserId: s.telegramUserId,
+        username: s.telegramUsername,
+        firstName: s.telegramFirstName,
+        lastName: s.telegramLastName,
+        occurredAt: s.occurredAt,
+        sourceLabel: s.attribution?.trackingLink?.name ?? 'без посилання',
+      }));
+
+      const unsubscriberRows: DigestPersonRow[] = unsubs.map((u) => {
+        const subscribedAt = u.subscriberProfile?.subscribedAt;
+        const daysInChannel = subscribedAt
+          ? Math.max(0, Math.floor((u.occurredAt.getTime() - subscribedAt.getTime()) / 86_400_000))
+          : undefined;
+        return {
+          telegramUserId: u.telegramUserId,
+          username: u.telegramUsername,
+          firstName: u.telegramFirstName,
+          lastName: u.telegramLastName,
+          occurredAt: u.occurredAt,
+          sourceLabel: u.subscriberProfile?.membershipEvent.attribution?.trackingLink?.name ?? 'без посилання',
+          daysInChannel,
+        };
+      });
+
+      messages.push(
+        formatChannelDigest({
+          channelTitle: channel.title,
+          totalActive,
+          netChange: subs.length - unsubs.length,
+          subscribers: subscriberRows,
+          unsubscribers: unsubscriberRows,
+        }),
+      );
+    }
+
+    return messages;
   }
 
   private attrLabel(type: string) {
@@ -210,8 +233,15 @@ export class BotAdminService {
       await ctx.reply('У вас немає доступних workspace.');
       return;
     }
-    const text = await this.buildDigest(wsIds, mode);
-    await ctx.reply(text, { reply_markup: this.mainMenuKeyboard() });
+    const messages = await this.buildChannelDigests(wsIds, mode);
+    if (messages.length === 0) {
+      await ctx.reply('За цей період активності немає.', { reply_markup: this.mainMenuKeyboard() });
+      return;
+    }
+    for (let i = 0; i < messages.length; i++) {
+      const isLast = i === messages.length - 1;
+      await ctx.reply(messages[i], isLast ? { reply_markup: this.mainMenuKeyboard() } : undefined);
+    }
   }
 
   async sendChannelsList(ctx: Context, telegramId: string) {
@@ -415,8 +445,13 @@ export class BotAdminService {
       if (wsIds.length === 0) continue;
 
       try {
-        const text = await this.buildDigest(wsIds, 'yesterday');
-        await bot.api.sendMessage(parseInt(user.telegramId, 10), `🌅 Щоденний звіт\n\n${text}`);
+        const messages = await this.buildChannelDigests(wsIds, 'yesterday');
+        if (messages.length === 0) continue;
+        const chatId = parseInt(user.telegramId, 10);
+        await bot.api.sendMessage(chatId, '🌅 Щоденний звіт');
+        for (const text of messages) {
+          await bot.api.sendMessage(chatId, text);
+        }
       } catch {
         /* blocked bot */
       }

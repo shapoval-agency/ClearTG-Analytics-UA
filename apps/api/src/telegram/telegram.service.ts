@@ -334,7 +334,10 @@ export class TelegramService implements OnModuleInit {
   private async handleChatMemberUpdate(ctx: {
     chatMember: {
       chat: { id: number; type: string };
-      new_chat_member: { status: string; user: { id: number; username?: string } };
+      new_chat_member: {
+        status: string;
+        user: { id: number; username?: string; first_name: string; last_name?: string };
+      };
       old_chat_member: { status: string };
       invite_link?: { invite_link: string } | null;
     };
@@ -384,6 +387,8 @@ export class TelegramService implements OnModuleInit {
         channel.id,
         telegramUserId,
         user.username,
+        user.first_name,
+        user.last_name,
         ctx.update.update_id,
         inviteUrl,
       );
@@ -397,6 +402,8 @@ export class TelegramService implements OnModuleInit {
         channel.id,
         telegramUserId,
         user.username,
+        user.first_name,
+        user.last_name,
       );
       this.logger.log(
         `Відписка: user ${telegramUserId} з каналу ${channel.title}`,
@@ -410,6 +417,8 @@ export class TelegramService implements OnModuleInit {
     channelId: string,
     telegramUserId: string,
     username: string | undefined,
+    firstName: string | undefined,
+    lastName: string | undefined,
     updateId: number,
     telegramInviteUrl?: string | null,
   ) {
@@ -438,6 +447,8 @@ export class TelegramService implements OnModuleInit {
         eventType: MembershipEventType.SUBSCRIBE,
         telegramUserId,
         telegramUsername: username,
+        telegramFirstName: firstName,
+        telegramLastName: lastName,
         inviteLinkId,
         rawUpdateId: String(updateId),
       },
@@ -479,6 +490,8 @@ export class TelegramService implements OnModuleInit {
     channelId: string,
     telegramUserId: string,
     username?: string,
+    firstName?: string,
+    lastName?: string,
   ) {
     // Беремо найновіший профіль (може бути кілька — по одному на цикл підписки).
     const profile = await this.prisma.subscriberProfile.findFirst({
@@ -507,6 +520,8 @@ export class TelegramService implements OnModuleInit {
         eventType: MembershipEventType.UNSUBSCRIBE,
         telegramUserId,
         telegramUsername: username,
+        telegramFirstName: firstName,
+        telegramLastName: lastName,
       },
     });
 
@@ -516,6 +531,9 @@ export class TelegramService implements OnModuleInit {
         channelId,
         subscriberProfileId: profile?.id ?? null,
         telegramUserId,
+        telegramUsername: username,
+        telegramFirstName: firstName,
+        telegramLastName: lastName,
       },
     });
   }
