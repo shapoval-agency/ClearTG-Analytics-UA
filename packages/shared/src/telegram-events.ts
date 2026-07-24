@@ -58,7 +58,8 @@ export function formatRecentSubscribersList(rows: RecentSubscriberRow[], now: Da
     const who = r.username ? `@${r.username}` : `id ${r.telegramUserId}`;
     const status = r.isActive ? '✅' : '❌';
     const days = Math.max(0, Math.floor((now.getTime() - r.subscribedAt.getTime()) / 86_400_000));
-    return `${status} ${who} — ${r.channelTitle}, ${r.subscribedAt.toLocaleString('uk-UA')} (${days} дн.)`;
+    const subscribedAtLabel = r.subscribedAt.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' });
+    return `${status} ${who} — ${r.channelTitle}, ${subscribedAtLabel} (${days} дн.)`;
   });
 
   return `👥 Останні підписники:\n\n${lines.join('\n')}`;

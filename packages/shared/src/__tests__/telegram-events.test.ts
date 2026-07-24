@@ -88,6 +88,10 @@ describe('formatRecentSubscribersList', () => {
     expect(text).toContain('tets');
     expect(text).toContain('✅');
     expect(text).toContain('(1 дн.)');
+    // 2026-07-21T10:00:00Z is 13:00 in Kyiv (summer, +3h) - not the raw UTC hour.
+    // Regression check: 'uk-UA' alone sets the language, not the timezone.
+    expect(text).toContain('13:00');
+    expect(text).not.toContain('10:00');
   });
 
   it('falls back to the telegram id when there is no username', () => {
