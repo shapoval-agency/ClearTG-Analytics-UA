@@ -519,7 +519,7 @@ export class DashboardService {
             utmMedium: true,
             utmCampaign: true,
             utmContent: true,
-            trackingLink: { select: { slug: true, name: true } },
+            trackingLink: { select: { slug: true, name: true, creativeTag: true } },
           },
         },
       },
@@ -540,6 +540,7 @@ export class DashboardService {
       utmMedium: e.clickEvent?.utmMedium ?? null,
       utmCampaign: e.clickEvent?.utmCampaign ?? null,
       utmContent: e.clickEvent?.utmContent ?? null,
+      creativeTag: e.clickEvent?.trackingLink.creativeTag ?? null,
     }));
   }
 }

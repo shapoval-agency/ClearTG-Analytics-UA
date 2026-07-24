@@ -15,6 +15,7 @@ interface BotStartRow {
   utmMedium: string | null;
   utmCampaign: string | null;
   utmContent: string | null;
+  creativeTag: string | null;
 }
 
 export default async function BotStartsReportPage() {
@@ -80,7 +81,7 @@ export default async function BotStartsReportPage() {
                     {r.trackingLinkSlug ? `/${r.trackingLinkSlug}` : r.trackingLinkName ?? '—'}
                   </td>
                   <td className="p-4 text-slate-600">
-                    {[r.utmSource, r.utmCampaign, r.utmContent].filter(Boolean).join(' · ') || '—'}
+                    {[r.utmSource, r.utmCampaign, r.creativeTag].filter(Boolean).join(' · ') || '—'}
                   </td>
                 </tr>
               ))}
