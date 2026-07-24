@@ -484,25 +484,19 @@ export class TelegramService implements OnModuleInit {
     const profile = await this.prisma.subscriberProfile.findFirst({
       where: { workspaceId, channelId, telegramUserId },
       orderBy: { subscribedAt: 'desc' },
+      include: { _count: { select: { unsubscribeEvents: true } } },
     });
 
-    // Telegram іноді шле кілька chat_member підряд — не дублюємо відписку
-    const recent = await this.prisma.unsubscribeEvent.findFirst({
-      where: {
-        workspaceId,
-        channelId,
-        telegramUserId,
-        occurredAt: { gte: new Date(Date.now() - 60_000) },
-      },
-      orderBy: { occurredAt: 'desc' },
-    });
-    if (recent) {
-      if (!recent.subscriberProfileId && profile?.id) {
-        await this.prisma.unsubscribeEvent.update({
-          where: { id: recent.id },
-          data: { subscriberProfileId: profile.id },
-        });
-      }
+    // Дублікат того самого update (Telegram шле кілька chat_member підряд) —
+    // це саме той випадок, коли У ЦЬОГО профілю вже Є прив'язана відписка.
+    // ВАЖЛИВО: раніше тут була перевірка "чи була БУДЬ-ЯКА відписка за останні
+    // 60 секунд" — без прив'язки до профілю. Якщо людина встигала пройти
+    // кілька циклів підписка→відписка швидко (типово під час ручного тесту),
+    // друга відписка потрапляла в те саме 60-секундне вікно першої і
+    // вважалася дублем, тому НЕ записувалася. А без запису відписки на
+    // другому профілі третя підписка бачила "останній профіль ще активний"
+    // і теж не створювала запис — три цикли схлопувались в один-два.
+    if (profile && profile._count.unsubscribeEvents > 0) {
       return;
     }
 
