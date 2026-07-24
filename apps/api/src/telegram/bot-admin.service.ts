@@ -152,7 +152,10 @@ export class BotAdminService {
             eventType: MembershipEventType.SUBSCRIBE,
             occurredAt: { gte: from, lt: to },
           },
-          include: { attribution: { include: { trackingLink: true } } },
+          include: {
+            attribution: { include: { trackingLink: true } },
+            subscriberProfile: { select: { botStarted: true } },
+          },
         }),
         this.prisma.unsubscribeEvent.findMany({
           where: { channelId: channel.id, occurredAt: { gte: from, lt: to } },
@@ -177,21 +180,31 @@ export class BotAdminService {
         lastName: s.telegramLastName,
         occurredAt: s.occurredAt,
         sourceLabel: s.attribution?.trackingLink?.name ?? 'без посилання',
+        botStarted: s.subscriberProfile?.botStarted ?? false,
       }));
 
+      // Якщо subscriberProfile немає — людина вже була в каналі до підключення
+      // бота (ми ніколи не бачили її підписку, тільки зараз бачимо відписку).
+      // Показуємо це окремою групою "початкова аудиторія" і рахуємо дні
+      // від дати підключення каналу — це нижня межа ("не менше N днів"),
+      // а не точна дата підписки, якої ми просто не знаємо.
       const unsubscriberRows: DigestPersonRow[] = unsubs.map((u) => {
         const subscribedAt = u.subscriberProfile?.subscribedAt;
         const daysInChannel = subscribedAt
           ? Math.max(0, Math.floor((u.occurredAt.getTime() - subscribedAt.getTime()) / 86_400_000))
-          : undefined;
+          : Math.max(0, Math.floor((u.occurredAt.getTime() - channel.createdAt.getTime()) / 86_400_000));
         return {
           telegramUserId: u.telegramUserId,
           username: u.telegramUsername,
           firstName: u.telegramFirstName,
           lastName: u.telegramLastName,
           occurredAt: u.occurredAt,
-          sourceLabel: u.subscriberProfile?.membershipEvent.attribution?.trackingLink?.name ?? 'без посилання',
+          sourceLabel: u.subscriberProfile
+            ? (u.subscriberProfile.membershipEvent.attribution?.trackingLink?.name ?? 'без посилання')
+            : 'початкова аудиторія',
           daysInChannel,
+          daysApprox: !subscribedAt,
+          botStarted: u.subscriberProfile?.botStarted ?? false,
         };
       });
 

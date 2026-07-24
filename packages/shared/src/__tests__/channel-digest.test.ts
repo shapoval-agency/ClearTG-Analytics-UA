@@ -95,4 +95,65 @@ describe('formatChannelDigest', () => {
     expect(text).toContain('-3 підписників');
     expect(text).not.toContain('+-3');
   });
+
+  it('marks users who already pressed /start on the bot with a star', () => {
+    const text = formatChannelDigest({
+      channelTitle: 'test',
+      totalActive: 1,
+      netChange: 1,
+      subscribers: [
+        row({ telegramUserId: '1', username: 'starred', occurredAt: new Date('2026-07-21T10:00:00Z'), botStarted: true }),
+        row({ telegramUserId: '2', username: 'plain', occurredAt: new Date('2026-07-21T09:00:00Z'), botStarted: false }),
+      ],
+      unsubscribers: [],
+    });
+    expect(text).toContain('@starred ★');
+    expect(text).toContain('@plain');
+    expect(text).not.toContain('@plain ★');
+  });
+
+  it('shows an approximate ">N дн." for unsubscribers whose original subscribe was never tracked', () => {
+    const text = formatChannelDigest({
+      channelTitle: 'test',
+      totalActive: 1,
+      netChange: -1,
+      subscribers: [],
+      unsubscribers: [
+        row({
+          telegramUserId: '1',
+          firstName: 'Viktor',
+          username: 'amiigo00l0',
+          sourceLabel: 'початкова аудиторія',
+          occurredAt: new Date('2026-07-21T20:14:00Z'),
+          daysInChannel: 54,
+          daysApprox: true,
+          botStarted: true,
+        }),
+      ],
+    });
+    expect(text).toContain('(1) початкова аудиторія:');
+    expect(text).toContain('Viktor, @amiigo00l0 ★ (>54 дн.)');
+  });
+
+  it('caps each source group at 50 rows and reports the remainder', () => {
+    const rows: DigestPersonRow[] = Array.from({ length: 55 }, (_, i) =>
+      row({
+        telegramUserId: String(i),
+        username: `user${i}`,
+        occurredAt: new Date(Date.UTC(2026, 6, 21, 10, 0, 0) - i * 60_000),
+      }),
+    );
+    const text = formatChannelDigest({
+      channelTitle: 'test',
+      totalActive: 55,
+      netChange: 55,
+      subscribers: rows,
+      unsubscribers: [],
+    });
+    expect(text).toContain('(55) без посилання:');
+    expect(text).toContain('@user0');
+    expect(text).toContain('@user49');
+    expect(text).not.toContain('@user50');
+    expect(text).toContain('і ще: 5');
+  });
 });
