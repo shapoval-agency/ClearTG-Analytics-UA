@@ -272,6 +272,13 @@ export class TelegramService implements OnModuleInit {
         where: { telegramChatId },
       });
 
+      // Сповіщення про підключення/відключення каналу мають йти всім учасникам
+      // workspace, привʼязаним до Telegram-бота — а не лише тому, хто фізично
+      // натиснув кнопку в Telegram. Канал міг підключити хтось, у кого бот
+      // взагалі не запущений (наприклад, ПМ клієнта), тоді як власник кабінету
+      // (який і привʼязав бота) про це нічого не дізнається.
+      let workspaceIdForNotify: string | null = existing?.workspaceId ?? null;
+
       if (!existing && isAdmin) {
         const workspaceId = await this.botAdmin.resolveWorkspaceForChannelRegistration(fromId);
         if (workspaceId) {
@@ -285,9 +292,8 @@ export class TelegramService implements OnModuleInit {
             },
           });
           this.logger.log(`Auto-registered channel ${telegramChatId}`, 'Telegram');
-          if (fromId) {
-            await this.botAdmin.notifyChannelConnected(fromId, title, this.bot!);
-          }
+          workspaceIdForNotify = workspaceId;
+          await this.botAdmin.notifyChannelConnected(workspaceId, title, this.bot!);
         }
       }
 
@@ -296,15 +302,15 @@ export class TelegramService implements OnModuleInit {
         data: { botIsAdmin: isAdmin, title: chat.title ?? 'Channel', username },
       });
 
-      if (fromId && didBotBecomeAdmin({ oldStatus, newStatus })) {
+      if (workspaceIdForNotify && didBotBecomeAdmin({ oldStatus, newStatus })) {
         const canInviteUsers = 'can_invite_users' in newMember ? newMember.can_invite_users : undefined;
         if (isMissingInvitePermission({ status: newStatus, can_invite_users: canInviteUsers })) {
-          await this.botAdmin.notifyMissingInvitePermission(fromId, title, this.bot!);
+          await this.botAdmin.notifyMissingInvitePermission(workspaceIdForNotify, title, this.bot!);
         }
       }
 
-      if (fromId && didBotLoseAdmin({ oldStatus, newStatus })) {
-        await this.botAdmin.notifyChannelDisconnected(fromId, existing?.title ?? title, this.bot!);
+      if (workspaceIdForNotify && didBotLoseAdmin({ oldStatus, newStatus })) {
+        await this.botAdmin.notifyChannelDisconnected(workspaceIdForNotify, existing?.title ?? title, this.bot!);
       }
 
       this.logger.log(`Bot status in channel ${chat.id}: ${newStatus}`, 'Telegram');

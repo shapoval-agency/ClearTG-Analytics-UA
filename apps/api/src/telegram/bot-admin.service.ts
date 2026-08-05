@@ -407,43 +407,65 @@ export class BotAdminService {
     return ws?.id ?? null;
   }
 
-  async notifyChannelConnected(telegramUserId: string, channelTitle: string, bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
-    try {
-      await bot.api.sendMessage(
-        parseInt(telegramUserId, 10),
-        `✅ Канал «${channelTitle}» підключено до ClearTG!\n\n` +
-          'Підписки та відписки тепер фіксуються автоматично.\n' +
-          'Натисніть /report для звіту.',
-      );
-    } catch {
-      /* user may not have started bot */
+  /**
+   * Усі учасники workspace, які привʼязали Telegram до кабінету — саме їм, а не
+   * тільки тому, хто фізично натиснув кнопку в Telegram, мають приходити
+   * сповіщення про канал: адмінку веде власник/менеджер, а бота підключити
+   * міг будь-хто (наприклад, ПМ), хто ніколи навіть не тиснув /start у бота.
+   */
+  private async telegramRecipientsForWorkspace(workspaceId: string): Promise<string[]> {
+    const members = await this.prisma.workspaceMember.findMany({
+      where: { workspaceId, user: { telegramId: { not: null } } },
+      include: { user: { select: { telegramId: true } } },
+    });
+    return members
+      .map((m) => m.user.telegramId)
+      .filter((id): id is string => Boolean(id));
+  }
+
+  private async broadcastToWorkspace(
+    workspaceId: string,
+    text: string,
+    bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } },
+  ) {
+    const recipients = await this.telegramRecipientsForWorkspace(workspaceId);
+    for (const telegramUserId of recipients) {
+      try {
+        await bot.api.sendMessage(parseInt(telegramUserId, 10), text);
+      } catch {
+        /* user may not have started bot */
+      }
     }
   }
 
-  async notifyChannelDisconnected(telegramUserId: string, channelTitle: string, bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
-    try {
-      await bot.api.sendMessage(
-        parseInt(telegramUserId, 10),
-        `⚠️ Канал «${channelTitle}» відключено від ClearTG.\n\n` +
-          'Бота прибрано з адміністраторів (або знято потрібні права) — збір підписок/відписок зупинено.\n' +
-          'Щоб відновити, поверніть боту права адміністратора з можливістю «Додавання учасників».',
-      );
-    } catch {
-      /* user may not have started bot */
-    }
+  async notifyChannelConnected(workspaceId: string, channelTitle: string, bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
+    await this.broadcastToWorkspace(
+      workspaceId,
+      `✅ Канал «${channelTitle}» підключено до ClearTG!\n\n` +
+        'Підписки та відписки тепер фіксуються автоматично.\n' +
+        'Натисніть /report для звіту.',
+      bot,
+    );
   }
 
-  async notifyMissingInvitePermission(telegramUserId: string, channelTitle: string, bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
-    try {
-      await bot.api.sendMessage(
-        parseInt(telegramUserId, 10),
-        `⚠️ Бот доданий адміністратором каналу «${channelTitle}», але без права «Додавання учасників».\n\n` +
-          'Підписки й відписки вже фіксуються, але точні (per-click) invite-посилання для реклами створюватися не будуть.\n' +
-          'Відкрийте налаштування адміністратора бота в каналі й увімкніть це право.',
-      );
-    } catch {
-      /* user may not have started bot */
-    }
+  async notifyChannelDisconnected(workspaceId: string, channelTitle: string, bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
+    await this.broadcastToWorkspace(
+      workspaceId,
+      `⚠️ Канал «${channelTitle}» відключено від ClearTG.\n\n` +
+        'Бота прибрано з адміністраторів (або знято потрібні права) — збір підписок/відписок зупинено.\n' +
+        'Щоб відновити, поверніть боту права адміністратора з можливістю «Додавання учасників».',
+      bot,
+    );
+  }
+
+  async notifyMissingInvitePermission(workspaceId: string, channelTitle: string, bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
+    await this.broadcastToWorkspace(
+      workspaceId,
+      `⚠️ Бот доданий адміністратором каналу «${channelTitle}», але без права «Додавання учасників».\n\n` +
+        'Підписки й відписки вже фіксуються, але точні (per-click) invite-посилання для реклами створюватися не будуть.\n' +
+        'Відкрийте налаштування адміністратора бота в каналі й увімкніть це право.',
+      bot,
+    );
   }
 
   async sendDailyReportsToAll(bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
