@@ -48,6 +48,8 @@ export interface RecentSubscriberRow {
   channelTitle: string;
   subscribedAt: Date;
   isActive: boolean;
+  /** Час останньої відписки — null, якщо профіль ще активний. */
+  unsubscribedAt?: Date | null;
 }
 
 /** Текст для кнопки «Останні підписники» в боті — конкретні люди, а не лише агрегат. */
@@ -57,9 +59,17 @@ export function formatRecentSubscribersList(rows: RecentSubscriberRow[], now: Da
   const lines = rows.map((r) => {
     const who = r.username ? `@${r.username}` : `id ${r.telegramUserId}`;
     const status = r.isActive ? '✅' : '❌';
-    const days = Math.max(0, Math.floor((now.getTime() - r.subscribedAt.getTime()) / 86_400_000));
+    // Для тих, хто відписався, "днів у каналі" рахуємо ДО моменту відписки,
+    // а не до "зараз" — інакше давно відписана людина показувала б дні, що
+    // ростуть нескінченно, ніби вона й досі в каналі.
+    const periodEnd = !r.isActive && r.unsubscribedAt ? r.unsubscribedAt : now;
+    const days = Math.max(0, Math.floor((periodEnd.getTime() - r.subscribedAt.getTime()) / 86_400_000));
     const subscribedAtLabel = r.subscribedAt.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' });
-    return `${status} ${who} — ${r.channelTitle}, ${subscribedAtLabel} (${days} дн.)`;
+    const unsubscribedPart =
+      !r.isActive && r.unsubscribedAt
+        ? ` → ${r.unsubscribedAt.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' })}`
+        : '';
+    return `${status} ${who} — ${r.channelTitle}, ${subscribedAtLabel}${unsubscribedPart} (${days} дн.)`;
   });
 
   return `👥 Останні підписники:\n\n${lines.join('\n')}`;

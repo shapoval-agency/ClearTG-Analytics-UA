@@ -306,6 +306,7 @@ export class BotAdminService {
       include: {
         channel: { select: { title: true } },
         membershipEvent: { select: { telegramUsername: true } },
+        unsubscribeEvents: { orderBy: { occurredAt: 'desc' }, take: 1 },
         _count: { select: { unsubscribeEvents: true } },
       },
       orderBy: { subscribedAt: 'desc' },
@@ -318,6 +319,7 @@ export class BotAdminService {
         telegramUserId: p.telegramUserId,
         channelTitle: p.channel.title,
         subscribedAt: p.subscribedAt,
+        unsubscribedAt: p.unsubscribeEvents[0]?.occurredAt ?? null,
         isActive: p._count.unsubscribeEvents === 0,
       })),
     );
@@ -361,6 +363,15 @@ export class BotAdminService {
 
     const attr = profile.membershipEvent.attribution;
     const active = profile._count.unsubscribeEvents === 0;
+    const lastUnsub = profile.unsubscribeEvents[0] ?? null;
+    // "Днів у каналі" — до моменту відписки, а не до "зараз" (та ж помилка,
+    // що й у списку "Останні підписники" — інакше давно відписана людина
+    // показувала б дні, що ростуть нескінченно).
+    const periodEnd = !active && lastUnsub ? lastUnsub.occurredAt : new Date();
+    const daysInChannel = Math.max(
+      0,
+      Math.floor((periodEnd.getTime() - profile.subscribedAt.getTime()) / 86_400_000),
+    );
 
     const dossierUrl = this.cabinetUrl(`/subscribers/${profile.id}`);
     return (
@@ -369,6 +380,10 @@ export class BotAdminService {
       `Username: ${profile.membershipEvent.telegramUsername ? `@${profile.membershipEvent.telegramUsername}` : '—'}\n` +
       `ID: ${profile.telegramUserId}\n` +
       `Підписка: ${profile.subscribedAt.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' })}\n` +
+      (!active && lastUnsub
+        ? `Відписка: ${lastUnsub.occurredAt.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' })}\n`
+        : '') +
+      `Днів у каналі: ${daysInChannel}\n` +
       `Статус: ${active ? '✅ у каналі' : '❌ відписався'}\n` +
       (attr
         ? `\nДжерело: ${this.attrLabel(attr.attributionType)} (${Math.round(attr.confidenceScore * 100)}%)\n` +

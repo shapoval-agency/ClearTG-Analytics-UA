@@ -109,6 +109,45 @@ describe('formatRecentSubscribersList', () => {
     expect(text).toContain('(0 дн.)');
   });
 
+  it('shows the unsubscribe time and bounds "days in channel" to the actual subscription period, not until now', () => {
+    // Subscribed 2026-07-01, unsubscribed 2026-07-03 (2 days), checked "now" on
+    // 2026-07-22 (21 days later) — the report must say 2 days, not 21.
+    const text = formatRecentSubscribersList(
+      [
+        {
+          username: 'left_long_ago',
+          telegramUserId: '42',
+          channelTitle: 'tets',
+          subscribedAt: new Date('2026-07-01T10:00:00Z'),
+          unsubscribedAt: new Date('2026-07-03T10:00:00Z'),
+          isActive: false,
+        },
+      ],
+      now,
+    );
+    expect(text).toContain('❌ @left_long_ago');
+    expect(text).toContain('(2 дн.)');
+    expect(text).not.toContain('(21 дн.)');
+    // Both timestamps must be visible — subscription time AND unsubscribe time.
+    expect(text).toMatch(/→.*(\d{1,2}:\d{2})/);
+  });
+
+  it('falls back to counting until now when an inactive row has no unsubscribedAt (defensive default)', () => {
+    const text = formatRecentSubscribersList(
+      [
+        {
+          username: 'no_unsub_data',
+          telegramUserId: '43',
+          channelTitle: 'tets',
+          subscribedAt: new Date('2026-07-20T10:00:00Z'),
+          isActive: false,
+        },
+      ],
+      now, // now = 2026-07-22T12:00:00Z
+    );
+    expect(text).toContain('(2 дн.)');
+  });
+
   it('lists multiple subscribers in the order given', () => {
     const text = formatRecentSubscribersList(
       [
