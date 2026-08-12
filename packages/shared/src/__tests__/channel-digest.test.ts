@@ -48,7 +48,7 @@ describe('formatChannelDigest', () => {
     expect(text.indexOf('17:03')).toBeLessThan(text.indexOf('14:32'));
   });
 
-  it('groups subscribers and unsubscribers by source, largest group first, and shows days for unsubscribers', () => {
+  it('groups subscribers and unsubscribers by source and shows days for unsubscribers', () => {
     const text = formatChannelDigest({
       channelTitle: 'KLTP FINANCE',
       totalActive: 1059,
@@ -133,6 +133,40 @@ describe('formatChannelDigest', () => {
     });
     expect(text).toContain('(1) початкова аудиторія:');
     expect(text).toContain('Viktor, @amiigo00l0 ★ (>54 дн.)');
+  });
+
+  it('orders groups by most recent activity, not by group size (PM example: KLTP FINANCE)', () => {
+    // Real example from the PM: "початкова аудиторія" has only 1 person but the
+    // most recent event of the whole list (23:14), so it must come BEFORE
+    // "без посилання" which has 4 people but its newest event is only 12:15.
+    const text = formatChannelDigest({
+      channelTitle: 'KLTP FINANCE',
+      totalActive: 1146,
+      netChange: -5,
+      subscribers: [],
+      unsubscribers: [
+        row({
+          telegramUserId: '1',
+          firstName: 'Viktor',
+          username: 'amiigo00l0',
+          sourceLabel: 'початкова аудиторія',
+          occurredAt: new Date('2026-07-21T20:14:00Z'), // 23:14 Kyiv
+          daysInChannel: 54,
+          daysApprox: true,
+          botStarted: true,
+        }),
+        row({ telegramUserId: '2', firstName: 'Shahab', username: 'shahab_azizi62', sourceLabel: 'без посилання', occurredAt: new Date('2026-07-21T09:15:00Z'), daysInChannel: 35 }),
+        row({ telegramUserId: '3', firstName: 'BOGDAN SHULGA', username: 'bs_1313', sourceLabel: 'без посилання', occurredAt: new Date('2026-07-21T08:46:00Z'), daysInChannel: 0, botStarted: true }),
+        row({ telegramUserId: '4', firstName: 'piragunka', username: 'piragunka', sourceLabel: 'без посилання', occurredAt: new Date('2026-07-21T04:14:00Z'), daysInChannel: 45, botStarted: true }),
+        row({ telegramUserId: '5', firstName: 'Владимир', username: 'violentych', sourceLabel: 'без посилання', occurredAt: new Date('2026-07-21T02:51:00Z'), daysInChannel: 36, botStarted: true }),
+      ],
+    });
+
+    const initialAudienceIndex = text.indexOf('початкова аудиторія');
+    const noLinkIndex = text.indexOf('без посилання');
+    expect(initialAudienceIndex).toBeGreaterThan(-1);
+    expect(noLinkIndex).toBeGreaterThan(-1);
+    expect(initialAudienceIndex).toBeLessThan(noLinkIndex);
   });
 
   it('caps each source group at 50 rows and reports the remainder', () => {

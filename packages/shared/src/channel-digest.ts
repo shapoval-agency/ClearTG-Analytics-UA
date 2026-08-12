@@ -44,7 +44,13 @@ function formatPersonLine(row: DigestPersonRow): string {
   return `${time} ${name}${usernamePart}${starPart}${daysPart}`;
 }
 
-/** Groups by джерело (назва tracking-посилання чи "без посилання"), найбільші групи першими. */
+/**
+ * Groups by джерело (назва tracking-посилання чи "без посилання").
+ * Порядок груп — за часом НАЙНОВІШОЇ події в групі (не за розміром групи!):
+ * рядки всередині групи вже відсортовані найновіші-перші, тож це просто час
+ * першого рядка кожної групи. Групи з малою кількістю людей, але свіжою
+ * активністю, мають йти вище за великі групи зі старішою активністю.
+ */
 function groupBySource(rows: DigestPersonRow[]): Array<[string, DigestPersonRow[]]> {
   const groups = new Map<string, DigestPersonRow[]>();
   for (const row of rows) {
@@ -55,7 +61,9 @@ function groupBySource(rows: DigestPersonRow[]): Array<[string, DigestPersonRow[
   for (const list of groups.values()) {
     list.sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
   }
-  return [...groups.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  return [...groups.entries()].sort(
+    (a, b) => b[1][0].occurredAt.getTime() - a[1][0].occurredAt.getTime() || a[0].localeCompare(b[0]),
+  );
 }
 
 function formatSection(label: string, rows: DigestPersonRow[]): string {
