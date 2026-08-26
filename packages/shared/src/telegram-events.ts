@@ -42,6 +42,29 @@ export function isMissingInvitePermission(rights: BotAdminRights): boolean {
   return rights.can_invite_users !== true;
 }
 
+export interface InvitePermissionTransition {
+  old: BotAdminRights;
+  new: BotAdminRights;
+}
+
+/**
+ * true, якщо бот лишався адміном і до, і після події (не щойно призначений,
+ * не знятий), але саме право «Додавання учасників» за цей апдейт змінилося.
+ *
+ * Telegram шле my_chat_member і тоді, коли адмін просто перемикає одне право
+ * вже існуючому адміну — status у такому апдейті однаковий з обох боків
+ * ('administrator' → 'administrator'), тож didBotBecomeAdmin/didBotLoseAdmin
+ * цей випадок не бачать. Без цієї перевірки такий апдейт долітав до бота, але
+ * жодне сповіщення не надсилалось — власник дізнавався, що право з'явилось
+ * (чи зникло), лише випадково прогнавши інший апдейт (наприклад /start), що
+ * виглядало як "хибний баг" на боці Telegram, хоча апдейт із правильними
+ * даними бот отримував одразу.
+ */
+export function didInvitePermissionChange(t: InvitePermissionTransition): boolean {
+  if (!isBotAdminStatus(t.old.status) || !isBotAdminStatus(t.new.status)) return false;
+  return isMissingInvitePermission(t.old) !== isMissingInvitePermission(t.new);
+}
+
 export interface RecentSubscriberRow {
   username: string | null;
   telegramUserId: string;

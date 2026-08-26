@@ -4,6 +4,7 @@ import {
   didBotBecomeAdmin,
   didBotLoseAdmin,
   isMissingInvitePermission,
+  didInvitePermissionChange,
   formatRecentSubscribersList,
 } from '../telegram-events';
 
@@ -60,6 +61,56 @@ describe('isMissingInvitePermission', () => {
 
   it('non-admin statuses are not applicable', () => {
     expect(isMissingInvitePermission({ status: 'member' })).toBe(false);
+  });
+});
+
+describe('didInvitePermissionChange', () => {
+  it('flags an existing admin gaining the invite permission (status stays administrator)', () => {
+    expect(
+      didInvitePermissionChange({
+        old: { status: 'administrator', can_invite_users: false },
+        new: { status: 'administrator', can_invite_users: true },
+      }),
+    ).toBe(true);
+  });
+
+  it('flags an existing admin losing the invite permission (status stays administrator)', () => {
+    expect(
+      didInvitePermissionChange({
+        old: { status: 'administrator', can_invite_users: true },
+        new: { status: 'administrator', can_invite_users: false },
+      }),
+    ).toBe(true);
+  });
+
+  it('does not flag when the permission stays the same', () => {
+    expect(
+      didInvitePermissionChange({
+        old: { status: 'administrator', can_invite_users: true },
+        new: { status: 'administrator', can_invite_users: true },
+      }),
+    ).toBe(false);
+    expect(
+      didInvitePermissionChange({
+        old: { status: 'administrator', can_invite_users: false },
+        new: { status: 'administrator', can_invite_users: false },
+      }),
+    ).toBe(false);
+  });
+
+  it('does not flag admin status transitions (already covered by didBotBecomeAdmin/didBotLoseAdmin)', () => {
+    expect(
+      didInvitePermissionChange({
+        old: { status: 'member' },
+        new: { status: 'administrator', can_invite_users: true },
+      }),
+    ).toBe(false);
+    expect(
+      didInvitePermissionChange({
+        old: { status: 'administrator', can_invite_users: true },
+        new: { status: 'member' },
+      }),
+    ).toBe(false);
   });
 });
 

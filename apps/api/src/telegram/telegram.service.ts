@@ -14,6 +14,7 @@ import {
   isTrackableChatType,
   didBotBecomeAdmin,
   didBotLoseAdmin,
+  didInvitePermissionChange,
   isMissingInvitePermission,
 } from '@cleartg/shared';
 import { Bot, webhookCallback } from 'grammy';
@@ -259,7 +260,8 @@ export class TelegramService implements OnModuleInit {
       const chat = ctx.myChatMember.chat;
       if (!isTrackableChatType(chat.type)) return;
 
-      const oldStatus = ctx.myChatMember.old_chat_member.status;
+      const oldMember = ctx.myChatMember.old_chat_member;
+      const oldStatus = oldMember.status;
       const newMember = ctx.myChatMember.new_chat_member;
       const newStatus = newMember.status;
       const isAdmin = newStatus === 'administrator';
@@ -267,6 +269,8 @@ export class TelegramService implements OnModuleInit {
       const username = 'username' in chat ? chat.username ?? null : null;
       const title = chat.title ?? 'Channel';
       const fromId = ctx.from?.id ? String(ctx.from.id) : undefined;
+      const oldCanInviteUsers = 'can_invite_users' in oldMember ? oldMember.can_invite_users : undefined;
+      const canInviteUsers = 'can_invite_users' in newMember ? newMember.can_invite_users : undefined;
 
       const existing = await this.prisma.channel.findFirst({
         where: { telegramChatId },
@@ -302,8 +306,19 @@ export class TelegramService implements OnModuleInit {
         data: { botIsAdmin: isAdmin, title: chat.title ?? 'Channel', username },
       });
 
-      if (workspaceIdForNotify && didBotBecomeAdmin({ oldStatus, newStatus })) {
-        const canInviteUsers = 'can_invite_users' in newMember ? newMember.can_invite_users : undefined;
+      // Крім переходу в адміни, окремо перевіряємо зміну САМЕ права
+      // «Додавання учасників» у адміна, який лишався адміном і до, і після
+      // апдейту (status в обох 'administrator') — Telegram шле my_chat_member
+      // і на таку зміну, але didBotBecomeAdmin/didBotLoseAdmin її не бачать,
+      // бо status не змінився. Без цього власник дізнавався про ввімкнене чи
+      // вимкнене право лише випадково, через якийсь інший апдейт (наприклад
+      // /start), що виглядало як затримка чи баг на боці Telegram.
+      const invitePermissionChanged = didInvitePermissionChange({
+        old: { status: oldStatus, can_invite_users: oldCanInviteUsers },
+        new: { status: newStatus, can_invite_users: canInviteUsers },
+      });
+
+      if (workspaceIdForNotify && (didBotBecomeAdmin({ oldStatus, newStatus }) || invitePermissionChanged)) {
         if (isMissingInvitePermission({ status: newStatus, can_invite_users: canInviteUsers })) {
           await this.botAdmin.notifyMissingInvitePermission(workspaceIdForNotify, title, this.bot!);
         } else if (existing) {
