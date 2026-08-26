@@ -181,6 +181,14 @@ packages/
 - `HASH_SALT`
 - `TELEGRAM_BOT_TOKEN`
 
+## Документація
+
+| Документ | Для кого |
+|----------|----------|
+| **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)** | Як користуватися кабінетом, ботом, звітами та тестування |
+| [docs/DEPLOY-GIT.md](docs/DEPLOY-GIT.md) | Деплой Vercel + API |
+| [docs/TZ-TELEGRAM-UA.md](docs/TZ-TELEGRAM-UA.md) | Функції Telegram / UA |
+
 ## License
 
 Proprietary — ClearTG Analytics UA
