@@ -11,6 +11,9 @@ import { formatRecentSubscribersList, formatChannelDigest, kyivDayStart, type Di
 
 const BIND_TTL_SEC = 60 * 60 * 24 * 7;
 
+/** Мінімальний зріз grammY Bot, потрібний нотифікаціям — легко підмінити в тестах. */
+type NotifyBot = { api: { sendMessage: (id: number, text: string, extra?: object) => Promise<unknown> } };
+
 @Injectable()
 export class BotAdminService {
   private redis: Redis;
@@ -441,19 +444,20 @@ export class BotAdminService {
   private async broadcastToWorkspace(
     workspaceId: string,
     text: string,
-    bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } },
+    bot: NotifyBot,
+    extra?: object,
   ) {
     const recipients = await this.telegramRecipientsForWorkspace(workspaceId);
     for (const telegramUserId of recipients) {
       try {
-        await bot.api.sendMessage(parseInt(telegramUserId, 10), text);
+        await bot.api.sendMessage(parseInt(telegramUserId, 10), text, extra);
       } catch {
         /* user may not have started bot */
       }
     }
   }
 
-  async notifyChannelConnected(workspaceId: string, channelTitle: string, bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
+  async notifyChannelConnected(workspaceId: string, channelTitle: string, bot: NotifyBot) {
     await this.broadcastToWorkspace(
       workspaceId,
       `✅ Канал «${channelTitle}» підключено до ClearTG!\n\n` +
@@ -463,7 +467,7 @@ export class BotAdminService {
     );
   }
 
-  async notifyChannelDisconnected(workspaceId: string, channelTitle: string, bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
+  async notifyChannelDisconnected(workspaceId: string, channelTitle: string, bot: NotifyBot) {
     await this.broadcastToWorkspace(
       workspaceId,
       `⚠️ Канал «${channelTitle}» відключено від ClearTG.\n\n` +
@@ -473,7 +477,7 @@ export class BotAdminService {
     );
   }
 
-  async notifyMissingInvitePermission(workspaceId: string, channelTitle: string, bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
+  async notifyMissingInvitePermission(workspaceId: string, channelTitle: string, bot: NotifyBot) {
     await this.broadcastToWorkspace(
       workspaceId,
       `⚠️ Бот доданий адміністратором каналу «${channelTitle}», але без права «Додавання учасників».\n\n` +
@@ -483,7 +487,24 @@ export class BotAdminService {
     );
   }
 
-  async sendDailyReportsToAll(bot: { api: { sendMessage: (id: number, text: string) => Promise<unknown> } }) {
+  /**
+   * Бот щойно (знову) став адміном каналу з УСІМА потрібними правами — канал
+   * вже був відомий раніше (це не перше підключення). Раніше цей випадок
+   * взагалі не мав сповіщення: власник дізнавався, що все запрацювало, лише
+   * випадково натиснувши стару кнопку меню з попереднього повідомлення бота.
+   * Тому тут явно повертаємо і текст, і робоче меню.
+   */
+  async notifyChannelFullyRestored(workspaceId: string, channelTitle: string, bot: NotifyBot) {
+    await this.broadcastToWorkspace(
+      workspaceId,
+      `✅ У бота знову є всі потрібні права адміністратора в каналі «${channelTitle}».\n\n` +
+        'Збір підписок/відписок і точні (per-click) invite-посилання знову працюють у повному обсязі.',
+      bot,
+      { reply_markup: this.mainMenuKeyboard() },
+    );
+  }
+
+  async sendDailyReportsToAll(bot: NotifyBot) {
     const users = await this.prisma.user.findMany({
       where: { telegramId: { not: null } },
       include: { memberships: true },

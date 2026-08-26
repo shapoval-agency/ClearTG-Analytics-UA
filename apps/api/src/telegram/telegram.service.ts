@@ -306,6 +306,14 @@ export class TelegramService implements OnModuleInit {
         const canInviteUsers = 'can_invite_users' in newMember ? newMember.can_invite_users : undefined;
         if (isMissingInvitePermission({ status: newStatus, can_invite_users: canInviteUsers })) {
           await this.botAdmin.notifyMissingInvitePermission(workspaceIdForNotify, title, this.bot!);
+        } else if (existing) {
+          // Канал уже був відомий (це не перше підключення — воно вже надіслало
+          // notifyChannelConnected вище) і бот щойно ЗНОВУ став адміном з усіма
+          // потрібними правами: або його прибирали й повернули, або раніше не
+          // вистачало права "Додавання учасників" і його щойно додали. Раніше
+          // цей випадок не сповіщав нікого — власник дізнавався, що все
+          // запрацювало, лише випадково натиснувши стару кнопку меню.
+          await this.botAdmin.notifyChannelFullyRestored(workspaceIdForNotify, title, this.bot!);
         }
       }
 
