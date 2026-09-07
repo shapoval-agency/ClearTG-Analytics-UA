@@ -18,11 +18,26 @@ interface BotStartRow {
   creativeTag: string | null;
 }
 
+interface BotStartSummary {
+  totalClicks: number;
+  totalStarts: number;
+  blockedStarts: number;
+  startRate: number | null;
+}
+
+interface BotStartFeed {
+  summary: BotStartSummary;
+  rows: BotStartRow[];
+}
+
 export default async function BotStartsReportPage() {
   let rows: BotStartRow[] = [];
+  let summary: BotStartSummary | null = null;
   let loadError = false;
   try {
-    rows = await api<BotStartRow[]>('/api/dashboard/bot-starts');
+    const feed = await api<BotStartFeed>('/api/dashboard/bot-starts');
+    rows = feed.rows;
+    summary = feed.summary;
   } catch {
     loadError = true;
   }
@@ -33,6 +48,29 @@ export default async function BotStartsReportPage() {
         title="Переходи в бота"
         description="/start у своєму боті клієнта з міткою — точна атрибуція, Telegram сам передає ідентифікатор (блок 1.2)"
       />
+
+      {summary && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="bg-white rounded-xl border p-4">
+            <p className="text-xs text-slate-500">Кліків по посиланню</p>
+            <p className="text-xl font-semibold">{summary.totalClicks}</p>
+          </div>
+          <div className="bg-white rounded-xl border p-4">
+            <p className="text-xs text-slate-500">Натиснули «Старт»</p>
+            <p className="text-xl font-semibold">{summary.totalStarts}</p>
+          </div>
+          <div className="bg-white rounded-xl border p-4">
+            <p className="text-xs text-slate-500">Заблокували бота</p>
+            <p className="text-xl font-semibold">{summary.blockedStarts}</p>
+          </div>
+          <div className="bg-white rounded-xl border p-4">
+            <p className="text-xs text-slate-500">Дійшли → натиснули</p>
+            <p className="text-xl font-semibold">
+              {summary.startRate === null ? '—' : `${Math.round(summary.startRate * 100)}%`}
+            </p>
+          </div>
+        </div>
+      )}
 
       {loadError && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">

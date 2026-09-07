@@ -3,6 +3,8 @@ import { Bot, Context } from 'grammy';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { LoggerService } from '../common/logger.service';
+import { TelegramService } from '../telegram/telegram.service';
+import { BotAdminService } from '../telegram/bot-admin.service';
 import { parseClickStartPayload, didUserBlockBot, didUserUnblockBot } from '@cleartg/shared';
 import { BotStartEventStatus } from '@cleartg/database';
 
@@ -19,6 +21,8 @@ export class ClientBotRuntimeService implements OnModuleInit, OnModuleDestroy {
     private prisma: PrismaService,
     private crypto: CryptoService,
     private logger: LoggerService,
+    private telegram: TelegramService,
+    private botAdmin: BotAdminService,
   ) {}
 
   async onModuleInit() {
@@ -96,10 +100,11 @@ export class ClientBotRuntimeService implements OnModuleInit, OnModuleDestroy {
         this.bots.delete(connectionId);
         const message = err instanceof Error ? err.message : String(err);
         this.logger.error(`Клієнтський бот ${connectionId} не зміг стартувати: ${message}`, 'ClientBot');
-        await this.prisma.telegramBotConnection.update({
+        const updated = await this.prisma.telegramBotConnection.update({
           where: { id: connectionId },
           data: { isActive: false, lastError: message, lastErrorAt: new Date() },
         });
+        await this.notifyDisconnected(updated.workspaceId, updated.botUsername);
       });
   }
 
@@ -112,6 +117,27 @@ export class ClientBotRuntimeService implements OnModuleInit, OnModuleDestroy {
       /* ignore */
     }
     this.bots.delete(connectionId);
+  }
+
+  /**
+   * Поллінг клієнтського бота обірвався фатально (найчастіше 401 — токен
+   * відкликано через @BotFather). DB вже помічена isActive:false в місці
+   * виклику; тут лише активно попереджаємо власника, а не чекаємо, поки
+   * він сам зайде на сторінку «Свій бот» і побачить червоний бейдж.
+   */
+  private async notifyDisconnected(workspaceId: string, botUsername: string) {
+    const mainBot = this.telegram.getBot();
+    if (!mainBot) return;
+    try {
+      await this.botAdmin.notifyClientBotDisconnected(workspaceId, botUsername, mainBot);
+    } catch (err) {
+      this.logger.error(
+        `Не вдалося сповістити про відключення клієнтського бота @${botUsername}: ${
+          err instanceof Error ? err.message : err
+        }`,
+        'ClientBot',
+      );
+    }
   }
 
   private async handleStart(connectionId: string, ctx: Context) {

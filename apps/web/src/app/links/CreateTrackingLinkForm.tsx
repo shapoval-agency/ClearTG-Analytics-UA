@@ -32,6 +32,7 @@ export function CreateTrackingLinkForm({
   const [linkMode, setLinkMode] = useState<'LANDING_PAGE' | 'SHORTLINK'>('LANDING_PAGE');
   const [adSource, setAdSource] = useState<AdSourceValue>('meta');
   const [customSource, setCustomSource] = useState('');
+  const [creativeTag, setCreativeTag] = useState('');
   const [destination, setDestination] = useState<'channel' | 'personal' | 'bot'>('channel');
   const [personalUsername, setPersonalUsername] = useState('');
   const [botConnectionId, setBotConnectionId] = useState(botConnections[0]?.id ?? '');
@@ -68,6 +69,7 @@ export function CreateTrackingLinkForm({
       linkMode,
       utmSource: utmSource || undefined,
       utmMedium: sourceMeta.medium || undefined,
+      creativeTag: creativeTag.trim() || undefined,
       ...(isPersonal
         ? {
             destinationMode: 'PERSONAL_CHAT',
@@ -186,6 +188,20 @@ export function CreateTrackingLinkForm({
             placeholder="Своя назва джерела (utm_source)"
           />
         )}
+      </div>
+      <div>
+        <label className="block text-sm text-slate-600 mb-1">Мітка креативу (необовʼязково)</label>
+        <input
+          className="w-full border rounded-lg px-3 py-2"
+          value={creativeTag}
+          onChange={(e) => setCreativeTag(e.target.value)}
+          maxLength={64}
+          placeholder="Наприклад: video_1, banner_блакитний"
+        />
+        <p className="text-xs text-slate-500 mt-1">
+          Щоб відрізняти конкретний креатив у звітах, коли в одного джерела/кампанії їх декілька
+          (до 64 символів — так само, як ліміт мітки в Telegram).
+        </p>
       </div>
       <div>
         <label className="block text-sm text-slate-600 mb-1">Канал</label>

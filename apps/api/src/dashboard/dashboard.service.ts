@@ -514,38 +514,56 @@ export class DashboardService {
    * "скільки дійшло / скільки натиснуло Старт" (п.10).
    */
   async getBotStartFeed(workspaceId: string, limit = 100) {
-    const events = await this.prisma.botStartEvent.findMany({
-      where: { workspaceId },
-      include: {
-        botConnection: { select: { botUsername: true } },
-        clickEvent: {
-          select: {
-            utmSource: true,
-            utmMedium: true,
-            utmCampaign: true,
-            utmContent: true,
-            trackingLink: { select: { slug: true, name: true, creativeTag: true } },
+    const [events, totalClicks, totalStarts, blockedStarts] = await Promise.all([
+      this.prisma.botStartEvent.findMany({
+        where: { workspaceId },
+        include: {
+          botConnection: { select: { botUsername: true } },
+          clickEvent: {
+            select: {
+              utmSource: true,
+              utmMedium: true,
+              utmCampaign: true,
+              utmContent: true,
+              trackingLink: { select: { slug: true, name: true, creativeTag: true } },
+            },
           },
         },
-      },
-      orderBy: { occurredAt: 'desc' },
-      take: limit,
-    });
+        orderBy: { occurredAt: 'desc' },
+        take: limit,
+      }),
+      // Кліки по посиланнях, що ведуть у бота клієнта — "дійшли до Telegram",
+      // ще до того, як людина натиснула «Старт» (або не натиснула).
+      this.prisma.clickEvent.count({
+        where: { workspaceId, trackingLink: { destinationMode: 'CLIENT_BOT_START' } },
+      }),
+      this.prisma.botStartEvent.count({ where: { workspaceId } }),
+      this.prisma.botStartEvent.count({ where: { workspaceId, status: 'BLOCKED' } }),
+    ]);
 
-    return events.map((e) => ({
-      id: e.id,
-      telegramUserId: e.telegramUserId,
-      telegramUsername: e.telegramUsername,
-      botUsername: e.botConnection.botUsername,
-      status: e.status,
-      occurredAt: e.occurredAt,
-      trackingLinkSlug: e.clickEvent?.trackingLink.slug ?? null,
-      trackingLinkName: e.clickEvent?.trackingLink.name ?? null,
-      utmSource: e.clickEvent?.utmSource ?? null,
-      utmMedium: e.clickEvent?.utmMedium ?? null,
-      utmCampaign: e.clickEvent?.utmCampaign ?? null,
-      utmContent: e.clickEvent?.utmContent ?? null,
-      creativeTag: e.clickEvent?.trackingLink.creativeTag ?? null,
-    }));
+    return {
+      summary: {
+        totalClicks,
+        totalStarts,
+        blockedStarts,
+        // Скільки з тих, хто дійшов до бота, реально натиснули «Старт».
+        startRate: totalClicks > 0 ? totalStarts / totalClicks : null,
+      },
+      rows: events.map((e) => ({
+        id: e.id,
+        telegramUserId: e.telegramUserId,
+        telegramUsername: e.telegramUsername,
+        botUsername: e.botConnection.botUsername,
+        status: e.status,
+        occurredAt: e.occurredAt,
+        trackingLinkSlug: e.clickEvent?.trackingLink.slug ?? null,
+        trackingLinkName: e.clickEvent?.trackingLink.name ?? null,
+        utmSource: e.clickEvent?.utmSource ?? null,
+        utmMedium: e.clickEvent?.utmMedium ?? null,
+        utmCampaign: e.clickEvent?.utmCampaign ?? null,
+        utmContent: e.clickEvent?.utmContent ?? null,
+        creativeTag: e.clickEvent?.trackingLink.creativeTag ?? null,
+      })),
+    };
   }
 }

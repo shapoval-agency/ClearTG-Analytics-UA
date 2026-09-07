@@ -504,6 +504,22 @@ export class BotAdminService {
     );
   }
 
+  /**
+   * Клієнтський бот (блок 1.2, окремий від адмін-бота) втратив доступ —
+   * найчастіше токен відкликано через @BotFather /revoke. Шлемо через ГОЛОВНИЙ
+   * бот, бо клієнтський, який щойно відвалився, для цього вже не годиться.
+   */
+  async notifyClientBotDisconnected(workspaceId: string, botUsername: string, bot: NotifyBot) {
+    await this.broadcastToWorkspace(
+      workspaceId,
+      `⚠️ Бот @${botUsername} відключився від ClearTG — токен більше не працює.\n\n` +
+        'Найімовірніша причина: токен відкликано через @BotFather (/revoke) або бота видалено.\n' +
+        'Переходи в цього бота з реклами тимчасово не фіксуються.\n' +
+        'Відкрийте «Свій бот» у кабінеті та підключіть новий токен.',
+      bot,
+    );
+  }
+
   async sendDailyReportsToAll(bot: NotifyBot) {
     const users = await this.prisma.user.findMany({
       where: { telegramId: { not: null } },

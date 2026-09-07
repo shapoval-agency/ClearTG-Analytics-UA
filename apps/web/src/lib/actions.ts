@@ -168,6 +168,7 @@ export async function createTrackingLinkAction(data: {
   utmMedium?: string;
   utmCampaign?: string;
   utmContent?: string;
+  creativeTag?: string;
   destinationMode?: string;
   destinationUrl?: string;
   usePerClickInvite?: boolean;
