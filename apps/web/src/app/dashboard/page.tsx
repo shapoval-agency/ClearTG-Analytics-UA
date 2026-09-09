@@ -96,6 +96,45 @@ export default async function DashboardPage() {
         </div>
       ) : (
         <>
+          {!data.dataIntegrity.ok && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-5 mb-6">
+              <p className="font-semibold text-red-900">
+                Технічна нестиковка: {data.dataIntegrity.missing} підписок без визначеного джерела атрибуції
+              </p>
+              <p className="text-sm text-red-800 mt-1">
+                {data.dataIntegrity.attributed} з {data.dataIntegrity.subscribers} підписок мають запис
+                про джерело (нехай навіть «невідоме») — решта не мають жодного. Це відрізняється від
+                банера нижче: там джерело відоме, просто «невідоме» саме по собі; тут — технічний збій,
+                варто повідомити розробника.
+              </p>
+            </div>
+          )}
+          {(() => {
+            // Тип 1 з ТЗ: підписники, що прийшли повз наші посилання (звичайна
+            // посилання на канал) — ORGANIC, і ті, кого не вдалось впевнено
+            // зіставити з кліком — UNKNOWN. З погляду клієнта обидва — це
+            // "не бачимо, з якої реклами людина прийшла" (гроші, що витрачені
+            // наосліп), тому рахуємо разом як окремий продажний блок,
+            // а не ховаємо в загальному технічному розбитті нижче.
+            const unknown = data.attributions.filter((a) => a.type === 'ORGANIC' || a.type === 'UNKNOWN');
+            const unknownCount = unknown.reduce((sum, a) => sum + a.count, 0);
+            const unknownShare = unknown.reduce((sum, a) => sum + a.share, 0);
+            if (data.subscribers === 0 || unknownCount === 0) return null;
+            return (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-6">
+                <p className="font-semibold text-amber-900">
+                  {unknownCount} підписників ({pct(unknownShare)}) — джерело невідоме
+                </p>
+                <p className="text-sm text-amber-800 mt-1">
+                  Ці люди прийшли не по tracking-посиланню чи запрошенню — ми не знаємо, з якої
+                  реклами (якщо вона взагалі була). Якщо серед них є ті, хто прийшов з платної
+                  реклами через звичайне посилання на канал — ці гроші витрачені наосліп: підключіть
+                  tracking-посилання або запрошувальне посилання на сторінці «Посилання», щоб бачити
+                  джерело кожного підписника.
+                </p>
+              </div>
+            );
+          })()}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <StatCard label="Підписників всього" value={data.subscribers} />
             <StatCard label="У каналі зараз" value={data.activeSubscribers ?? data.subscribers} />

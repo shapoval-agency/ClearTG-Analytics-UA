@@ -66,6 +66,25 @@ describe('Attribution Engine', () => {
     expect(result.campaignId).toBe('camp-2');
   });
 
+  it('attributes standalone (seed) invite link with 100% confidence, no click search', () => {
+    const result = attributeSubscription({
+      ...baseInput,
+      recentClicks: [],
+      inviteLinkUsed: {
+        id: 'inv-seed-1',
+        clickEventId: null,
+        campaignId: 'camp-seed',
+        trackingLinkId: null,
+        createdAt: new Date('2025-05-01T00:00:00Z'),
+      },
+    });
+
+    expect(result.attributionType).toBe('CAMPAIGN_INVITE');
+    expect(result.confidenceScore).toBe(1);
+    expect(result.campaignId).toBe('camp-seed');
+    expect(result.clickEventId).toBeNull();
+  });
+
   it('uses probabilistic attribution for time-based match', () => {
     const click = {
       id: 'click-3',

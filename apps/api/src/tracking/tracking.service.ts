@@ -28,6 +28,13 @@ export interface RecordClickResult {
   redirectDelayMs: number;
   consent: ReturnType<typeof parseConsentFromQuery>;
   privacyPolicyUrl: string | null;
+  /**
+   * П.10 з ТЗ: канал недоступний (бота прибрали/зняли права) — клік вже
+   * зафіксовано, але переходу в Telegram не буде. Контролер має показати
+   * зрозумілу сторінку замість редиректу на непрацююче посилання.
+   */
+  channelUnavailable: boolean;
+  channelTitle: string;
 }
 
 @Injectable()
@@ -65,6 +72,14 @@ export class TrackingService {
     const validation = validateLinkModeForPlatform(linkMode, platform);
     if (!validation.valid) {
       throw new BadRequestException(validation.reason);
+    }
+
+    if (dto.destinationMode === 'PUBLIC_POST' && !dto.postNumber && !dto.landingPostUrl) {
+      // Без жодного з двох — посилання мовчки відкриє канал цілком, а користувач
+      // думатиме, що веде на конкретний пост. Краще відмовити одразу.
+      throw new BadRequestException(
+        'Для переходу на конкретний пост вкажіть його номер (або повне посилання на пост).',
+      );
     }
 
     const slug = generateSlug(10);
@@ -221,7 +236,7 @@ export class TrackingService {
 
     const telegramUrl = await this.resolveDestination(link, clickEvent.id);
     const apiOrigin = resolveFrontendUrl();
-    const pageContext = this.buildPageContext(link, telegramUrl, clickEvent.id, apiOrigin);
+    const pageContext = this.buildPageContext(link, telegramUrl ?? 'https://t.me', clickEvent.id, apiOrigin);
 
     return {
       clickEvent,
@@ -230,6 +245,8 @@ export class TrackingService {
       redirectDelayMs: link.redirectDelayMs,
       consent,
       privacyPolicyUrl: link.workspace.privacyPolicyUrl,
+      channelUnavailable: telegramUrl === null,
+      channelTitle: link.channel.title,
     };
   }
 
@@ -299,23 +316,31 @@ export class TrackingService {
     };
   }
 
+  /**
+   * Повертає `null`, коли перехід у Telegram фізично неможливо побудувати —
+   * бота прибрали з каналу (або зняли права), invite-лінка не створюється,
+   * а публічного `@username` для запасного посилання теж немає (п.10 з ТЗ).
+   * Раніше в цьому випадку повертався мертвий рядок `t.me/channel` — людина
+   * тихо впиралась у неробочу посилання без жодного пояснення.
+   */
   private async resolveDestination(
     link: {
       destinationMode: string;
       landingPostUrl: string | null;
       destinationUrl: string | null;
+      postNumber: number | null;
       usePerClickInvite: boolean;
       workspaceId: string;
       channelId: string;
       campaignId: string | null;
       id: string;
-      channel: { username: string | null; telegramChatId: string };
+      channel: { username: string | null; telegramChatId: string; botIsAdmin: boolean };
       botConnection: { botUsername: string } | null;
     },
     clickId: string,
-  ): Promise<string> {
+  ): Promise<string | null> {
     const shouldUseInvite =
-      link.usePerClickInvite && link.destinationMode === 'INVITE_LINK';
+      link.usePerClickInvite && link.destinationMode === 'INVITE_LINK' && link.channel.botIsAdmin;
 
     if (shouldUseInvite) {
       const invite = await this.inviteLinks.createForClick({
@@ -330,12 +355,22 @@ export class TrackingService {
     }
 
     switch (link.destinationMode) {
-      case 'PUBLIC_POST':
-        return link.landingPostUrl ?? (link.channel.username
+      case 'PUBLIC_POST': {
+        if (link.landingPostUrl) return link.landingPostUrl;
+        // t.me/c/... працює лише для тих, хто вже в каналі (Telegram не вміє
+        // відкрити конкретний пост закритого каналу людині ззовні) — але це
+        // все одно краще, ніж порожній екран, якщо публічного username немає.
+        const base = link.channel.username
           ? `https://t.me/${link.channel.username}`
-          : `https://t.me/c/${link.channel.telegramChatId.replace('-100', '')}`);
+          : `https://t.me/c/${link.channel.telegramChatId.replace('-100', '')}`;
+        return link.postNumber ? `${base}/${link.postNumber}` : base;
+      }
       case 'INVITE_LINK':
-        return link.destinationUrl ?? `https://t.me/${link.channel.username ?? 'channel'}`;
+        if (link.destinationUrl) return link.destinationUrl;
+        // Публічний канал — t.me/username все одно робочий, навіть без
+        // нашого бота (просто без per-click атрибуції). Приватний канал без
+        // username і без бота — робочого посилання побудувати нема з чого.
+        return link.channel.username ? `https://t.me/${link.channel.username}` : null;
       case 'BOT_START':
         return `https://t.me/${process.env.TELEGRAM_BOT_USERNAME ?? 'cleartg_bot'}?start=click_${clickId}`;
       case 'CLIENT_BOT_START':

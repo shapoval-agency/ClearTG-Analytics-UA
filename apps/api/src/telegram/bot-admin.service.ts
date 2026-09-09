@@ -520,6 +520,23 @@ export class BotAdminService {
     );
   }
 
+  /**
+   * Самостійне (Тип 2 з ТЗ) запрошувальне посилання виявилось мертвим при
+   * плановій перевірці — найімовірніше, адмін видалив/відкликав його вручну
+   * прямо в Telegram. Накопичена по ньому статистика (підписки/атрибуція)
+   * НЕ видаляється — тільки нове посилання перестане приймати людей.
+   */
+  async notifyInviteLinkRevoked(workspaceId: string, linkName: string, channelTitle: string, bot: NotifyBot) {
+    await this.broadcastToWorkspace(
+      workspaceId,
+      `⚠️ Запрошувальне посилання «${linkName}» (канал «${channelTitle}») більше не працює в Telegram.\n\n` +
+        'Найімовірніше, його видалили або відкликали вручну прямо в Telegram (список запрошень каналу).\n' +
+        'Накопичена по ньому статистика збереглась у кабінеті, але нові люди по цьому посиланню вже не підуть — ' +
+        'створіть нове на сторінці «Посилання».',
+      bot,
+    );
+  }
+
   async sendDailyReportsToAll(bot: NotifyBot) {
     const users = await this.prisma.user.findMany({
       where: { telegramId: { not: null } },

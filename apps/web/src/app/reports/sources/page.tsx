@@ -7,6 +7,7 @@ interface CampaignReport {
   adPlatform: string;
   channelTitle: string;
   clicks: number;
+  uniqueClickers: number;
   subscribers: number;
   unsubscribes: number;
   conversionRate: number;
@@ -19,6 +20,7 @@ interface TrackingLinkReport {
   campaignName: string | null;
   channelTitle: string;
   clicks: number;
+  uniqueClickers: number;
   subscribers: number;
   unsubscribes: number;
   conversionRate: number;
@@ -27,6 +29,19 @@ interface TrackingLinkReport {
 
 function pct(n: number) {
   return `${(n * 100).toFixed(1)}%`;
+}
+
+/** П.12 з ТЗ: 20 кліків з одного пристрою — все одно 20 кліків, але поруч
+ * видно, скільки з них — різні люди (наближено по ipHash+userAgentHash). */
+function ClicksCell({ clicks, uniqueClickers }: { clicks: number; uniqueClickers: number }) {
+  return (
+    <>
+      {clicks}
+      {clicks > 0 && uniqueClickers < clicks && (
+        <span className="block text-xs text-slate-400">≈{uniqueClickers} відвідувачів</span>
+      )}
+    </>
+  );
 }
 
 export default async function ReportsSourcesPage() {
@@ -78,7 +93,7 @@ export default async function ReportsSourcesPage() {
                 <tr key={c.id} className="border-b last:border-0">
                   <td className="p-4 font-medium">{c.name}</td>
                   <td className="p-4">{c.adPlatform}</td>
-                  <td className="p-4">{c.clicks}</td>
+                  <td className="p-4"><ClicksCell clicks={c.clicks} uniqueClickers={c.uniqueClickers} /></td>
                   <td className="p-4">{c.subscribers}</td>
                   <td className="p-4">{c.unsubscribes ?? 0}</td>
                   <td className="p-4">{pct(c.conversionRate)}</td>
@@ -114,7 +129,7 @@ export default async function ReportsSourcesPage() {
                     {l.name && <span className="block text-slate-500 text-xs">{l.name}</span>}
                   </td>
                   <td className="p-4">{l.campaignName ?? '—'}</td>
-                  <td className="p-4">{l.clicks}</td>
+                  <td className="p-4"><ClicksCell clicks={l.clicks} uniqueClickers={l.uniqueClickers} /></td>
                   <td className="p-4">{l.subscribers}</td>
                   <td className="p-4">{l.unsubscribes ?? 0}</td>
                   <td className="p-4">{pct(l.conversionRate)}</td>

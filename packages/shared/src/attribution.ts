@@ -83,7 +83,25 @@ export function attributeSubscription(input: AttributionInput): AttributionResul
     }
   }
 
-  // 2. Campaign-level invite link (no specific click)
+  // 2a. Standalone invite link (Тип 2 з ТЗ) — самостійне посилання "під джерело",
+  // не прив'язане до жодного кліку/tracking-посилання. Telegram сам повідомляє
+  // нам, яке саме invite-посилання використали при вступі (chat_member.invite_link) —
+  // це факт, а не розрахунок, тому джерело (campaignId) відоме зі стовідсотковою
+  // певністю. Розрахунок (нижче, крок 2b) потрібен лише тоді, коли інвайт
+  // все ж прив'язаний до конкретного tracking-посилання і ми намагаємось
+  // додатково вгадати конкретний клік — тут вгадувати нічого.
+  if (inviteLinkUsed && !inviteLinkUsed.clickEventId && !inviteLinkUsed.trackingLinkId) {
+    return {
+      ...base,
+      attributionType: 'CAMPAIGN_INVITE',
+      confidenceScore: 1,
+      reason: 'Standalone invite link created for this source; Telegram reported this exact invite link on join — deterministic, not calculated',
+      campaignId: inviteLinkUsed.campaignId,
+    };
+  }
+
+  // 2b. Campaign-level invite link, ще прив'язаний до tracking-посилання
+  // (no specific click)
   if (inviteLinkUsed && !inviteLinkUsed.clickEventId) {
   const campaignClicks = recentClicks.filter(
       (c) =>

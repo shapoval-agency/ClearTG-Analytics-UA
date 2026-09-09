@@ -8,7 +8,7 @@ import { TrackingService } from './tracking.service';
 import { CreateTrackingLinkDto } from './dto/create-tracking-link.dto';
 import { Public, RequiresWorkspace } from '../common/decorators/auth.decorator';
 import { WorkspaceId } from '../common/decorators/user.decorator';
-import { renderLandingPage, renderShortlinkPage, renderRedirectPage } from './tracking-html';
+import { renderLandingPage, renderShortlinkPage, renderRedirectPage, renderChannelUnavailablePage } from './tracking-html';
 import type { RecordClickResult } from './tracking.service';
 
 type RequestWithMeta = {
@@ -37,6 +37,13 @@ function extractRequestMeta(req: RequestWithMeta) {
  */
 function respondToClick(result: RecordClickResult, reply: TrackingReply): string | undefined {
   const { pageContext, autoRedirect, redirectDelayMs } = result;
+
+  // П.10 з ТЗ: клік вже зафіксовано (recordClick), але Telegram-посилання
+  // побудувати нема з чого (бота прибрали з приватного каналу без username) —
+  // показуємо зрозумілу сторінку замість редиректу на неробоче посилання.
+  if (result.channelUnavailable) {
+    return renderChannelUnavailablePage(result.channelTitle);
+  }
 
   if (autoRedirect && redirectDelayMs === 0) {
     reply.redirect(302, pageContext.telegramUrl);

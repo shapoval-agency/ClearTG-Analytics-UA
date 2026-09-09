@@ -337,6 +337,17 @@ model ClickEvent {
   @@map("click_events")
 }
 
+// PER_CLICK — одноразовий інвайт (member_limit=1), який ми створюємо непомітно
+// для користувача під кожен клік по tracking-посиланню (частина механізму
+// "Тип 3" з ТЗ — EXACT_CLICK_INVITE-атрибуція).
+// STANDALONE — самостійне посилання виду t.me/+код, яке агентство створює один раз
+// під конкретне джерело (посів) і само передає партнеру/публікує. Без ліміту
+// учасників, без прив'язки до кліку. Це "Тип 2" з ТЗ.
+enum InviteLinkSource {
+  PER_CLICK
+  STANDALONE
+}
+
 model InviteLink {
   id             String   @id @default(cuid())
   workspaceId    String   @map("workspace_id")
@@ -345,6 +356,15 @@ model InviteLink {
   trackingLinkId String?  @map("tracking_link_id")
   clickEventId   String?  @map("click_event_id")
   telegramInviteLink String @map("telegram_invite_link")
+  source         InviteLinkSource @default(PER_CLICK) @map("source")
+  // Тільки для STANDALONE — назва джерела для UI ("Посів: канал Х"), не UTM.
+  name           String?  @map("name")
+  isRevoked      Boolean  @default(false) @map("is_revoked")
+  revokedAt      DateTime? @map("revoked_at")
+  // Коли health-check востаннє перевіряв, що посилання ще існує в Telegram
+  // (пасивна перевірка через editChatInviteLink-пробу, бо Bot API не має
+  // "get invite link status" методу).
+  lastCheckedAt  DateTime? @map("last_checked_at")
   createdAt      DateTime @default(now()) @map("created_at")
   expiresAt      DateTime? @map("expires_at")
 
@@ -357,6 +377,7 @@ model InviteLink {
 
   @@unique([telegramInviteLink])
   @@index([clickEventId])
+  @@index([workspaceId, source])
   @@map("invite_links")
 }
 

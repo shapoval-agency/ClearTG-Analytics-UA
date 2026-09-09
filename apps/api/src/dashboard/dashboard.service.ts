@@ -32,6 +32,20 @@ export class DashboardService {
       where: { workspaceId, unsubscribeEvents: { none: {} } },
     });
 
+    // П.17 з ТЗ: сума по всіх типах атрибуції (включно з "джерело невідоме")
+    // має дорівнювати загальній кількості підписок — якщо ні, десь губимо
+    // людей (наприклад, вже траплялось: гонка при одночасній підписці збігом
+    // блокує створення Attribution, а MembershipEvent лишається без пари,
+    // див. telegram.service.ts processSubscribe). Рахуємо тут же, без
+    // додаткового запиту — обидва числа вже отримані вище.
+    const attributedCount = attributions.reduce((sum, a) => sum + a.count, 0);
+    const dataIntegrity = {
+      subscribers,
+      attributed: attributedCount,
+      missing: Math.max(0, subscribers - attributedCount),
+      ok: attributedCount >= subscribers,
+    };
+
     return {
       clicks,
       subscribers,
@@ -40,6 +54,7 @@ export class DashboardService {
       clickToSubscribeRate,
       retention,
       attributions,
+      dataIntegrity,
       deliveryStats,
     };
   }
@@ -90,7 +105,7 @@ export class DashboardService {
 
     return Promise.all(
       campaigns.map(async (campaign) => {
-        const [clicks, subscribers, unsubscribes] = await Promise.all([
+        const [clicks, subscribers, unsubscribes, uniqueClickers] = await Promise.all([
           this.prisma.clickEvent.count({ where: { campaignId: campaign.id } }),
           this.prisma.attribution.count({
             where: {
@@ -101,6 +116,7 @@ export class DashboardService {
           this.prisma.unsubscribeEvent.count({
             where: { channelId: campaign.channelId },
           }),
+          this.countUniqueClickers(campaign.id, undefined),
         ]);
 
         return {
@@ -109,6 +125,7 @@ export class DashboardService {
           adPlatform: campaign.adPlatform,
           channelTitle: campaign.channel.title,
           clicks,
+          uniqueClickers,
           subscribers,
           unsubscribes,
           conversionRate: clicks > 0 ? subscribers / clicks : 0,
@@ -116,6 +133,23 @@ export class DashboardService {
         };
       }),
     );
+  }
+
+  /**
+   * П.12 з ТЗ: 20 кліків з одного пристрою мають лишитись 20 кліками (для
+   * точності CR і рекламних метрик), але в звіті має бути видно, що це одна
+   * людина, а не 20 різних. Прямого "device id" в нас немає (ми навмисно не
+   * ставимо cookie/fingerprint) — наближаємо унікального відвідувача парою
+   * (ipHash, userAgentHash), захешованих ще при записі кліку. Різні люди з
+   * однієї мережі й однаковим браузером зіллються в один рядок — це відома
+   * похибка методу, а не помилка підрахунку.
+   */
+  private async countUniqueClickers(campaignId?: string, trackingLinkId?: string) {
+    const groups = await this.prisma.clickEvent.groupBy({
+      by: ['ipHash', 'userAgentHash'],
+      where: { campaignId, trackingLinkId },
+    });
+    return groups.length;
   }
 
   async getTrackingLinkReports(workspaceId: string) {
@@ -130,7 +164,7 @@ export class DashboardService {
 
     return Promise.all(
       links.map(async (link) => {
-        const [clicks, subscribers, unsubscribes] = await Promise.all([
+        const [clicks, subscribers, unsubscribes, uniqueClickers] = await Promise.all([
           this.prisma.clickEvent.count({ where: { trackingLinkId: link.id } }),
           this.prisma.attribution.count({
             where: {
@@ -146,6 +180,7 @@ export class DashboardService {
               },
             },
           }),
+          this.countUniqueClickers(undefined, link.id),
         ]);
 
         return {
@@ -155,6 +190,7 @@ export class DashboardService {
           campaignName: link.campaign?.name ?? null,
           channelTitle: link.channel.title,
           clicks,
+          uniqueClickers,
           subscribers,
           unsubscribes,
           conversionRate: clicks > 0 ? subscribers / clicks : 0,
@@ -199,12 +235,18 @@ export class DashboardService {
         ['EXACT_CLICK_INVITE', 'CAMPAIGN_INVITE', 'PROBABILISTIC'].includes(attr.attributionType) &&
         (attr.campaign?.name || attr.trackingLink?.slug);
 
-      let joinSource = 'Telegram (канал)';
+      // ORGANIC — приєднався через звичайне посилання на канал (t.me/назва),
+      // ми знаємо тільки факт вступу, звідки саме — ні (Тип 1 з ТЗ).
+      // UNKNOWN — теж «джерело невідоме», але з іншої причини: були кліки
+      // по рекламі за вікном атрибуції, які не вдалось впевнено зіставити.
+      // Розрізняємо обидва в UI, щоб не ховати другий випадок під тим самим
+      // нейтральним лейблом, що й звичайний прямий вступ.
+      let joinSource = 'Джерело невідоме';
       if (hasAdSource) {
         const parts = [attr.campaign?.name, attr.trackingLink?.slug ? `/${attr.trackingLink.slug}` : null].filter(Boolean);
         joinSource = `Реклама: ${parts.join(' ')}`;
       } else if (attr?.attributionType === 'ORGANIC') {
-        joinSource = 'Telegram (напряму)';
+        joinSource = 'Telegram (напряму, без нашого посилання)';
       }
 
       return {

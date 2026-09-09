@@ -227,3 +227,38 @@ export function renderShortlinkPage(ctx: LandingPageContext): string {
 </body>
 </html>`;
 }
+
+/**
+ * П.10 з ТЗ: канал, з якого прибрали нашого бота (або зняли потрібні права) —
+ * людина не повинна впертись у мовчазний збій чи мертве посилання виду
+ * `t.me/channel`. Клік все одно фіксується (recordClick вже це зробив до
+ * виклику цієї сторінки) — рекламодавець не втрачає дані про сам факт кліку,
+ * тільки не отримує робочого переходу в Telegram.
+ */
+export function renderChannelUnavailablePage(channelTitle: string): string {
+  const channel = escapeHtml(channelTitle);
+
+  return `<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${channel} — тимчасово недоступно</title>
+  <meta name="robots" content="noindex,nofollow">
+  <style>${baseStyles()}
+    body { display: flex; align-items: center; justify-content: center; }
+    .wrap { text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>${channel} тимчасово недоступний</h1>
+    <p class="lead">
+      Ми не можемо зараз відкрити цей канал у Telegram. Найімовірніше, тимчасова технічна
+      проблема на боці каналу — спробуйте перейти пізніше або зверніться до організатора реклами.
+    </p>
+    <p class="no-js-note">Ваш перехід за посиланням зафіксовано.</p>
+  </div>
+</body>
+</html>`;
+}

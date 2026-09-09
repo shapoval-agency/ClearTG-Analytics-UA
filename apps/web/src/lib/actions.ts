@@ -171,6 +171,7 @@ export async function createTrackingLinkAction(data: {
   creativeTag?: string;
   destinationMode?: string;
   destinationUrl?: string;
+  postNumber?: number;
   usePerClickInvite?: boolean;
   botConnectionId?: string;
 }) {
@@ -206,6 +207,40 @@ export async function setTrackingLinkActiveAction(id: string, isActive: boolean)
     `${API_URL}/api/tracking-links/${id}/${isActive ? 'activate' : 'archive'}`,
     { method: 'PATCH', headers },
   );
+
+  revalidatePath('/links');
+}
+
+/** Тип 2 з ТЗ — самостійне (не per-click) запрошувальне посилання під джерело. */
+export async function createSeedInviteLinkAction(data: {
+  channelId: string;
+  campaignId: string;
+  name: string;
+}) {
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
+
+  const res = await fetch(`${API_URL}/api/invite-links`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return { error: (body as { message?: string | string[] }).message?.toString() ?? 'Не вдалося створити посилання' };
+  }
+
+  revalidatePath('/links');
+  return { error: null };
+}
+
+/** Void return: bound directly as a <form action> in links/page.tsx. */
+export async function revokeSeedInviteLinkAction(id: string): Promise<void> {
+  const headers = await authHeaders();
+  if (!headers) return;
+
+  await fetch(`${API_URL}/api/invite-links/${id}/revoke`, { method: 'PATCH', headers });
 
   revalidatePath('/links');
 }

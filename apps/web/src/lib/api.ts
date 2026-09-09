@@ -57,6 +57,7 @@ export interface DashboardOverview {
     share: number;
     confidenceLabel: string;
   }>;
+  dataIntegrity: { subscribers: number; attributed: number; missing: number; ok: boolean };
   deliveryStats: Array<{ status: string; count: number }>;
 }
 

@@ -22,7 +22,7 @@ export function CreateTrackingLinkForm({
   campaigns,
   botConnections = [],
 }: {
-  channels: Array<{ id: string; title: string }>;
+  channels: Array<{ id: string; title: string; username?: string | null }>;
   campaigns: Array<{ id: string; name: string }>;
   botConnections?: Array<{ id: string; botUsername: string; isActive: boolean }>;
 }) {
@@ -36,10 +36,14 @@ export function CreateTrackingLinkForm({
   const [destination, setDestination] = useState<'channel' | 'personal' | 'bot'>('channel');
   const [personalUsername, setPersonalUsername] = useState('');
   const [botConnectionId, setBotConnectionId] = useState(botConnections[0]?.id ?? '');
+  const [specificPost, setSpecificPost] = useState(false);
+  const [postNumber, setPostNumber] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   if (channels.length === 0) return null;
+
+  const selectedChannel = channels.find((c) => c.id === channelId);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -51,6 +55,7 @@ export function CreateTrackingLinkForm({
 
     const isPersonal = destination === 'personal';
     const isBot = destination === 'bot';
+    const isSpecificPost = destination === 'channel' && specificPost;
     if (isPersonal && !personalUsername.trim()) {
       setError('Вкажіть username особистого акаунта');
       setLoading(false);
@@ -58,6 +63,11 @@ export function CreateTrackingLinkForm({
     }
     if (isBot && !botConnectionId) {
       setError('Спочатку підключіть бота на сторінці «Свій бот»');
+      setLoading(false);
+      return;
+    }
+    if (isSpecificPost && !postNumber.trim()) {
+      setError('Вкажіть номер поста');
       setLoading(false);
       return;
     }
@@ -81,6 +91,16 @@ export function CreateTrackingLinkForm({
         ? {
             destinationMode: 'CLIENT_BOT_START',
             botConnectionId,
+            usePerClickInvite: false,
+          }
+        : {}),
+      ...(isSpecificPost
+        ? {
+            destinationMode: 'PUBLIC_POST',
+            postNumber: Number(postNumber),
+            // Invite-посилання відкриває канал цілком, а не конкретний пост —
+            // Telegram не вміє поєднати одне з іншим, тому для конкретного
+            // поста per-click invite вимикаємо (менш точна атрибуція натомість).
             usePerClickInvite: false,
           }
         : {}),
@@ -125,6 +145,38 @@ export function CreateTrackingLinkForm({
           <option value="personal">Особистий акаунт (особисті повідомлення)</option>
           <option value="bot">Свій бот (переходи в бота, /start з міткою)</option>
         </select>
+        {destination === 'channel' ? (
+          <div className="mt-2">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={specificPost}
+                onChange={(e) => setSpecificPost(e.target.checked)}
+              />
+              Вести на конкретний пост, а не на канал цілком
+            </label>
+            {specificPost ? (
+              <>
+                <input
+                  type="number"
+                  min={1}
+                  className="w-full border rounded-lg px-3 py-2 mt-2"
+                  value={postNumber}
+                  onChange={(e) => setPostNumber(e.target.value)}
+                  placeholder="Номер поста, наприклад 42"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  {selectedChannel?.username
+                    ? 'Працює, бо в каналу є публічний @username.'
+                    : 'У цього каналу немає публічного @username — Telegram не вміє відкрити конкретний пост людині, яка ще не в каналі, тому посилання відкриє канал цілком.'}
+                  {' '}Крім того, точна (per-click) invite-атрибуція для такого посилання вимкнена —
+                  Telegram не поєднує «відкрити конкретний пост» і «інвайт» в одному посиланні,
+                  тому підписка визначається ймовірнісно, а не напряму.
+                </p>
+              </>
+            ) : null}
+          </div>
+        ) : null}
         {destination === 'personal' ? (
           <>
             <input
