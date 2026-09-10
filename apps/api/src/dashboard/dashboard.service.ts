@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AttributionService } from '../attribution/attribution.service';
 import { ConversionService } from '../conversion/conversion.service';
-import { MembershipEventType, Prisma } from '@cleartg/database';
+import { MembershipEventType, Prisma, ConversionPlatform, ConversionEventStatus, AttributionType } from '@cleartg/database';
 import { kyivDayStart } from '@cleartg/shared';
 
 @Injectable()
@@ -83,16 +83,25 @@ export class DashboardService {
     };
   }
 
-  async getPixelDelivery(workspaceId: string) {
+  async getPixelDelivery(
+    workspaceId: string,
+    opts: { limit?: number; platform?: ConversionPlatform; status?: ConversionEventStatus } = {},
+  ) {
+    const { limit = 100, platform, status } = opts;
+
+    const where: Prisma.ConversionDeliveryLogWhereInput = { conversionEvent: { workspaceId } };
+    if (platform) where.platform = platform;
+    if (status) where.status = status;
+
     return this.prisma.conversionDeliveryLog.findMany({
-      where: { conversionEvent: { workspaceId } },
+      where,
       include: {
         conversionEvent: {
           select: { eventName: true, eventTime: true, status: true },
         },
       },
       orderBy: { deliveredAt: 'desc' },
-      take: 100,
+      take: limit,
     });
   }
 
@@ -202,15 +211,22 @@ export class DashboardService {
 
   async getSubscriberFeed(
     workspaceId: string,
-    opts: { limit?: number; channelId?: string; status?: 'active' | 'left'; search?: string } = {},
+    opts: {
+      limit?: number;
+      channelId?: string;
+      status?: 'active' | 'left';
+      search?: string;
+      attributionType?: AttributionType;
+    } = {},
   ) {
-    const { limit = 100, channelId, status, search } = opts;
+    const { limit = 100, channelId, status, search, attributionType } = opts;
 
     const where: Prisma.SubscriberProfileWhereInput = { workspaceId };
     if (channelId) where.channelId = channelId;
     // "Активний" профіль — той, що ще не має пов'язаної UnsubscribeEvent (див. коментар у schema.prisma).
     if (status === 'active') where.unsubscribeEvents = { none: {} };
     if (status === 'left') where.unsubscribeEvents = { some: {} };
+    if (attributionType) where.membershipEvent = { attribution: { attributionType } };
     if (search) {
       where.OR = [
         { telegramUserId: { contains: search } },
@@ -285,9 +301,28 @@ export class DashboardService {
     });
   }
 
-  async getUnsubscribeFeed(workspaceId: string, limit = 100) {
+  async getUnsubscribeFeed(
+    workspaceId: string,
+    opts: { limit?: number; channelId?: string; search?: string } = {},
+  ) {
+    const { limit = 100, channelId, search } = opts;
+
+    // Фільтруємо тільки по полях, що завжди лежать прямо на UnsubscribeEvent
+    // (channelId, telegramUserId/Username) — attributionType навмисно НЕ фільтруємо
+    // тут на рівні БД: він береться або з e.subscriberProfile, або з fallback-профілю,
+    // знайденого нижче в JS уже після вибірки (коли subscriberProfileId порожній),
+    // тож DB-фільтр по вкладеній attribution пропустив би саме ці fallback-випадки.
+    const where: Prisma.UnsubscribeEventWhereInput = { workspaceId };
+    if (channelId) where.channelId = channelId;
+    if (search) {
+      where.OR = [
+        { telegramUserId: { contains: search } },
+        { telegramUsername: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
     const events = await this.prisma.unsubscribeEvent.findMany({
-      where: { workspaceId },
+      where,
       include: {
         channel: { select: { title: true } },
         subscriberProfile: {
@@ -572,10 +607,28 @@ export class DashboardService {
    * різниця між рядками тут і кліками по відповідній посиланню й показує
    * "скільки дійшло / скільки натиснуло Старт" (п.10).
    */
-  async getBotStartFeed(workspaceId: string, limit = 100) {
+  async getBotStartFeed(
+    workspaceId: string,
+    opts: { limit?: number; botConnectionId?: string; status?: 'ACTIVE' | 'BLOCKED'; search?: string } = {},
+  ) {
+    const { limit = 100, botConnectionId, status, search } = opts;
+
+    const where: Prisma.BotStartEventWhereInput = { workspaceId };
+    if (botConnectionId) where.botConnectionId = botConnectionId;
+    if (status) where.status = status;
+    if (search) {
+      where.OR = [
+        { telegramUserId: { contains: search } },
+        { telegramUsername: { contains: search, mode: 'insensitive' } },
+        { clickEvent: { utmCampaign: { contains: search, mode: 'insensitive' } } },
+        { clickEvent: { trackingLink: { slug: { contains: search, mode: 'insensitive' } } } },
+        { clickEvent: { trackingLink: { name: { contains: search, mode: 'insensitive' } } } },
+      ];
+    }
+
     const [events, totalClicks, totalStarts, blockedStarts] = await Promise.all([
       this.prisma.botStartEvent.findMany({
-        where: { workspaceId },
+        where,
         include: {
           botConnection: { select: { botUsername: true } },
           clickEvent: {

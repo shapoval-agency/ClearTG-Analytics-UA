@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@cleartg/database';
 
 @Injectable()
 export class AuditService {
@@ -27,9 +28,24 @@ export class AuditService {
     });
   }
 
-  async list(workspaceId: string, limit = 50) {
+  async list(
+    workspaceId: string,
+    opts: { limit?: number; action?: string; entityType?: string; dateFrom?: string; dateTo?: string } = {},
+  ) {
+    const { limit = 50, action, entityType, dateFrom, dateTo } = opts;
+
+    const where: Prisma.AuditLogWhereInput = { workspaceId };
+    if (action) where.action = { contains: action, mode: 'insensitive' };
+    if (entityType) where.entityType = { contains: entityType, mode: 'insensitive' };
+    if (dateFrom || dateTo) {
+      where.createdAt = {
+        ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+        ...(dateTo ? { lte: new Date(dateTo) } : {}),
+      };
+    }
+
     return this.prisma.auditLog.findMany({
-      where: { workspaceId },
+      where,
       orderBy: { createdAt: 'desc' },
       take: limit,
     });

@@ -1,6 +1,7 @@
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import { formatDateUk } from '@/lib/labels';
+import Link from 'next/link';
 
 interface BotStartRow {
   id: string;
@@ -30,17 +31,43 @@ interface BotStartFeed {
   rows: BotStartRow[];
 }
 
-export default async function BotStartsReportPage() {
+interface BotConnection {
+  id: string;
+  botUsername: string;
+}
+
+function qs(params: Record<string, string | undefined>) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) search.set(key, value);
+  }
+  const s = search.toString();
+  return s ? `?${s}` : '';
+}
+
+export default async function BotStartsReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; botConnectionId?: string; status?: string }>;
+}) {
+  const { q, botConnectionId, status } = await searchParams;
   let rows: BotStartRow[] = [];
   let summary: BotStartSummary | null = null;
+  let bots: BotConnection[] = [];
   let loadError = false;
   try {
-    const feed = await api<BotStartFeed>('/api/dashboard/bot-starts');
+    const [feed, botConnections] = await Promise.all([
+      api<BotStartFeed>(`/api/dashboard/bot-starts${qs({ search: q, botConnectionId, status })}`),
+      api<BotConnection[]>('/api/client-bots'),
+    ]);
     rows = feed.rows;
     summary = feed.summary;
+    bots = botConnections;
   } catch {
     loadError = true;
   }
+
+  const hasFilters = Boolean(q || botConnectionId || status);
 
   return (
     <div>
@@ -79,12 +106,55 @@ export default async function BotStartsReportPage() {
         </div>
       )}
 
+      {!loadError && bots.length > 0 && (
+        <form className="bg-white rounded-xl border p-4 mb-6 flex flex-wrap items-end gap-3" method="get">
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-xs text-slate-500 mb-1">Пошук за @username, id, кампанією або посиланням</label>
+            <input
+              type="text"
+              name="q"
+              defaultValue={q ?? ''}
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="min-w-[160px]">
+            <label className="block text-xs text-slate-500 mb-1">Бот</label>
+            <select name="botConnectionId" defaultValue={botConnectionId ?? ''} className="w-full border rounded-lg px-3 py-2 text-sm">
+              <option value="">Усі боти</option>
+              {bots.map((b) => (
+                <option key={b.id} value={b.id}>@{b.botUsername}</option>
+              ))}
+            </select>
+          </div>
+          <div className="min-w-[140px]">
+            <label className="block text-xs text-slate-500 mb-1">Статус</label>
+            <select name="status" defaultValue={status ?? ''} className="w-full border rounded-lg px-3 py-2 text-sm">
+              <option value="">Усі</option>
+              <option value="ACTIVE">активний</option>
+              <option value="BLOCKED">заблокував бота</option>
+            </select>
+          </div>
+          <button type="submit" className="bg-brand-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-brand-700">
+            Застосувати
+          </button>
+          {hasFilters && (
+            <Link href="/reports/bot-starts" className="text-sm text-slate-500 underline hover:text-slate-700">
+              Скинути
+            </Link>
+          )}
+        </form>
+      )}
+
       {!loadError && rows.length === 0 ? (
-        <p className="text-slate-500 text-sm">
-          Ще немає переходів. Підключіть бота на сторінці{' '}
-          <a href="/integrations/own-bot" className="underline">«Свій бот»</a>, створіть посилання
-          з призначенням «Свій бот» і натисніть «Старт» у боті за цим посиланням.
-        </p>
+        hasFilters ? (
+          <p className="text-slate-500 text-sm">Нічого не знайдено за цим фільтром.</p>
+        ) : (
+          <p className="text-slate-500 text-sm">
+            Ще немає переходів. Підключіть бота на сторінці{' '}
+            <a href="/integrations/own-bot" className="underline">«Свій бот»</a>, створіть посилання
+            з призначенням «Свій бот» і натисніть «Старт» у боті за цим посиланням.
+          </p>
+        )
       ) : (
         <div className="overflow-x-auto bg-white rounded-xl border">
           <table className="w-full text-sm">

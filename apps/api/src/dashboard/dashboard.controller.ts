@@ -1,4 +1,5 @@
 import { Controller, Get, Header, NotFoundException, Param, Query, Res } from '@nestjs/common';
+import type { ConversionPlatform, ConversionEventStatus, AttributionType } from '@cleartg/database';
 import { DashboardService } from './dashboard.service';
 import { RequiresWorkspace } from '../common/decorators/auth.decorator';
 import { WorkspaceId } from '../common/decorators/user.decorator';
@@ -17,8 +18,19 @@ export class DashboardController {
 
   @RequiresWorkspace()
   @Get('pixel-delivery')
-  pixelDelivery(@WorkspaceId() workspaceId: string) {
-    return this.dashboard.getPixelDelivery(workspaceId);
+  pixelDelivery(
+    @WorkspaceId() workspaceId: string,
+    @Query('platform') platform?: string,
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const validPlatforms = ['META', 'GOOGLE_ADS', 'GA4', 'TIKTOK'];
+    const validStatuses = ['PENDING', 'SENT', 'FAILED', 'SKIPPED_NO_CONSENT', 'SKIPPED_NO_IDENTIFIER', 'SKIPPED_POLICY_RESTRICTION'];
+    return this.dashboard.getPixelDelivery(workspaceId, {
+      platform: validPlatforms.includes(platform ?? '') ? (platform as ConversionPlatform) : undefined,
+      status: validStatuses.includes(status ?? '') ? (status as ConversionEventStatus) : undefined,
+      limit: limit ? Math.min(Number(limit) || 100, 2000) : undefined,
+    });
   }
 
   @RequiresWorkspace()
@@ -40,12 +52,17 @@ export class DashboardController {
     @Query('channelId') channelId?: string,
     @Query('status') status?: string,
     @Query('search') search?: string,
+    @Query('attributionType') attributionType?: string,
     @Query('limit') limit?: string,
   ) {
+    const validAttributionTypes = ['EXACT_CLICK_INVITE', 'CAMPAIGN_INVITE', 'PROBABILISTIC', 'ORGANIC', 'UNKNOWN'];
     return this.dashboard.getSubscriberFeed(workspaceId, {
       channelId,
       status: status === 'active' || status === 'left' ? status : undefined,
       search,
+      attributionType: validAttributionTypes.includes(attributionType ?? '')
+        ? (attributionType as AttributionType)
+        : undefined,
       limit: limit ? Math.min(Number(limit) || 100, 5000) : undefined,
     });
   }
@@ -75,14 +92,34 @@ export class DashboardController {
 
   @RequiresWorkspace()
   @Get('unsubscribes')
-  unsubscribeFeed(@WorkspaceId() workspaceId: string) {
-    return this.dashboard.getUnsubscribeFeed(workspaceId);
+  unsubscribeFeed(
+    @WorkspaceId() workspaceId: string,
+    @Query('channelId') channelId?: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.dashboard.getUnsubscribeFeed(workspaceId, {
+      channelId,
+      search,
+      limit: limit ? Math.min(Number(limit) || 100, 5000) : undefined,
+    });
   }
 
   @RequiresWorkspace()
   @Get('bot-starts')
-  botStartFeed(@WorkspaceId() workspaceId: string) {
-    return this.dashboard.getBotStartFeed(workspaceId);
+  botStartFeed(
+    @WorkspaceId() workspaceId: string,
+    @Query('botConnectionId') botConnectionId?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.dashboard.getBotStartFeed(workspaceId, {
+      botConnectionId,
+      status: status === 'ACTIVE' || status === 'BLOCKED' ? status : undefined,
+      search,
+      limit: limit ? Math.min(Number(limit) || 100, 2000) : undefined,
+    });
   }
 
   @RequiresWorkspace()

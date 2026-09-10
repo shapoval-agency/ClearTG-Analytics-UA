@@ -6,6 +6,7 @@ import {
   formatDateUk,
   sourceSummary,
 } from '@/lib/labels';
+import Link from 'next/link';
 
 interface SubscriberRow {
   id: string;
@@ -37,19 +38,44 @@ interface UnsubscribeRow {
   utmCampaign: string | null;
 }
 
-export default async function ReportsSubscriptionsPage() {
+interface Channel {
+  id: string;
+  title: string;
+}
+
+const ATTRIBUTION_TYPES = ['EXACT_CLICK_INVITE', 'CAMPAIGN_INVITE', 'PROBABILISTIC', 'ORGANIC', 'UNKNOWN'];
+
+function qs(params: Record<string, string | undefined>) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) search.set(key, value);
+  }
+  const s = search.toString();
+  return s ? `?${s}` : '';
+}
+
+export default async function ReportsSubscriptionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; channelId?: string; attributionType?: string }>;
+}) {
+  const { q, channelId, attributionType } = await searchParams;
   let subscribers: SubscriberRow[] = [];
   let unsubscribes: UnsubscribeRow[] = [];
+  let channels: Channel[] = [];
   let loadError = false;
 
   try {
-    [subscribers, unsubscribes] = await Promise.all([
-      api<SubscriberRow[]>('/api/dashboard/subscribers'),
-      api<UnsubscribeRow[]>('/api/dashboard/unsubscribes'),
+    [subscribers, unsubscribes, channels] = await Promise.all([
+      api<SubscriberRow[]>(`/api/dashboard/subscribers${qs({ search: q, channelId, attributionType })}`),
+      api<UnsubscribeRow[]>(`/api/dashboard/unsubscribes${qs({ search: q, channelId })}`),
+      api<Channel[]>('/api/channels'),
     ]);
   } catch {
     loadError = true;
   }
+
+  const hasFilters = Boolean(q || channelId || attributionType);
 
   return (
     <div className="space-y-10">
@@ -68,11 +94,51 @@ export default async function ReportsSubscriptionsPage() {
         </div>
       )}
 
+      <form className="bg-white rounded-xl border p-4 flex flex-wrap items-end gap-3" method="get">
+        <div className="flex-1 min-w-[180px]">
+          <label className="block text-xs text-slate-500 mb-1">Пошук за @username або id</label>
+          <input
+            type="text"
+            name="q"
+            defaultValue={q ?? ''}
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="min-w-[160px]">
+          <label className="block text-xs text-slate-500 mb-1">Канал</label>
+          <select name="channelId" defaultValue={channelId ?? ''} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="">Усі канали</option>
+            {channels.map((ch) => (
+              <option key={ch.id} value={ch.id}>{ch.title}</option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-[180px]">
+          <label className="block text-xs text-slate-500 mb-1">Тип атрибуції (підписки)</label>
+          <select name="attributionType" defaultValue={attributionType ?? ''} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="">Усі типи</option>
+            {ATTRIBUTION_TYPES.map((t) => (
+              <option key={t} value={t}>{attributionTypeLabel(t)}</option>
+            ))}
+          </select>
+        </div>
+        <button type="submit" className="bg-brand-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-brand-700">
+          Застосувати
+        </button>
+        {hasFilters && (
+          <Link href="/reports/subscriptions" className="text-sm text-slate-500 underline hover:text-slate-700">
+            Скинути
+          </Link>
+        )}
+      </form>
+
       <section>
         <h2 className="font-semibold mb-3">Підписки ({subscribers.length})</h2>
         {subscribers.length === 0 ? (
           <p className="text-slate-500 text-sm">
-            Ще немає підписок. Створіть tracking-посилання, клікніть і підпишіться на канал.
+            {hasFilters
+              ? 'Нічого не знайдено за цим фільтром.'
+              : 'Ще немає підписок. Створіть tracking-посилання, клікніть і підпишіться на канал.'}
           </p>
         ) : (
           <div className="overflow-x-auto bg-white rounded-xl border">
@@ -109,7 +175,7 @@ export default async function ReportsSubscriptionsPage() {
       <section>
         <h2 className="font-semibold mb-3">Відписки ({unsubscribes.length})</h2>
         {unsubscribes.length === 0 ? (
-          <p className="text-slate-500 text-sm">Відписок поки немає.</p>
+          <p className="text-slate-500 text-sm">{hasFilters ? 'Нічого не знайдено за цим фільтром.' : 'Відписок поки немає.'}</p>
         ) : (
           <div className="overflow-x-auto bg-white rounded-xl border">
             <table className="w-full text-sm">
