@@ -29,7 +29,7 @@ const nav = [
   { href: '/settings/audit-log', label: 'Аудит' },
 ];
 
-const NO_SHELL = ['/login', '/onboarding', '/auth/callback', '/privacy', '/terms', '/cookies'];
+const NO_SHELL = ['/login', '/onboarding', '/auth/callback', '/privacy', '/terms', '/cookies', '/v2'];
 
 export function AppShell({
   children,
@@ -63,6 +63,13 @@ export function AppShell({
           )}
         </div>
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+          <Link
+            href="/v2"
+            className="block px-3 py-2 rounded-lg text-sm text-brand-700 bg-brand-50 hover:bg-brand-100 transition-colors"
+          >
+            Новий кабінет →
+          </Link>
+          <div className="my-2 border-t border-slate-100" />
           {agencyNav.map((item) => (
             <Link
               key={item.href}

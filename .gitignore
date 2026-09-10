@@ -11,3 +11,11 @@ coverage/
 .DS_Store
 *.tsbuildinfo
 .vercel
+
+# Локальные настройки редакторов и агентов
+.claude/settings.local.json
+.idea/
+*.swp
+
+# Логи QA-прогонов
+.qa/logs/
