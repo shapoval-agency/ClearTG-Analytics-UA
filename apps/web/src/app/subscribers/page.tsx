@@ -13,19 +13,43 @@ interface Member {
   joinSource: string;
 }
 
-export default async function SubscribersPage() {
+interface Channel {
+  id: string;
+  title: string;
+}
+
+function qs(params: Record<string, string | undefined>) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) search.set(key, value);
+  }
+  const s = search.toString();
+  return s ? `?${s}` : '';
+}
+
+export default async function SubscribersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; channelId?: string; status?: string }>;
+}) {
+  const { q, channelId, status } = await searchParams;
   const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? 'cleartg_bot';
   let members: Member[] = [];
+  let channels: Channel[] = [];
   let loadError = false;
 
   try {
-    members = await api<Member[]>('/api/dashboard/subscribers');
+    [members, channels] = await Promise.all([
+      api<Member[]>(`/api/dashboard/subscribers${qs({ search: q, channelId, status })}`),
+      api<Channel[]>('/api/channels'),
+    ]);
   } catch {
     loadError = true;
   }
 
   const active = members.filter((m) => m.isActive);
   const left = members.filter((m) => !m.isActive);
+  const hasFilters = Boolean(q || channelId || status);
 
   return (
     <div>
@@ -34,7 +58,7 @@ export default async function SubscribersPage() {
         description="Хто підписався або кого ви додали в Telegram. Без tracking-посилань — бот фіксує події сам."
       >
         <a
-          href="/api/dashboard/subscribers/export.csv"
+          href={`/api/dashboard/subscribers/export.csv`}
           className="text-sm text-brand-600 hover:underline"
         >
           Експорт CSV
@@ -68,15 +92,59 @@ export default async function SubscribersPage() {
           <p className="text-2xl font-semibold">{left.length}</p>
         </div>
         <div className="bg-white rounded-xl border p-4">
-          <p className="text-sm text-slate-500">Всього записів</p>
+          <p className="text-sm text-slate-500">Всього записів{hasFilters ? ' (за фільтром)' : ''}</p>
           <p className="text-2xl font-semibold">{members.length}</p>
         </div>
       </div>
 
+      <form className="bg-white rounded-xl border p-4 mb-6 flex flex-wrap items-end gap-3" method="get">
+        <div className="flex-1 min-w-[180px]">
+          <label className="block text-xs text-slate-500 mb-1">Пошук за @username або id</label>
+          <input
+            type="text"
+            name="q"
+            defaultValue={q ?? ''}
+            placeholder="username або telegram id"
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="min-w-[160px]">
+          <label className="block text-xs text-slate-500 mb-1">Канал</label>
+          <select name="channelId" defaultValue={channelId ?? ''} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="">Усі канали</option>
+            {channels.map((ch) => (
+              <option key={ch.id} value={ch.id}>{ch.title}</option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-[140px]">
+          <label className="block text-xs text-slate-500 mb-1">Статус</label>
+          <select name="status" defaultValue={status ?? ''} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="">Усі</option>
+            <option value="active">У каналі</option>
+            <option value="left">Відписався</option>
+          </select>
+        </div>
+        <button type="submit" className="bg-brand-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-brand-700">
+          Застосувати
+        </button>
+        {hasFilters && (
+          <Link href="/subscribers" className="text-sm text-slate-500 underline hover:text-slate-700">
+            Скинути
+          </Link>
+        )}
+      </form>
+
       {members.length === 0 ? (
         <div className="bg-white rounded-xl border p-8 text-center text-slate-500">
-          <p>Поки нікого немає.</p>
-          <p className="text-sm mt-2">Додайте тестового користувача в канал tets — він зʼявиться тут.</p>
+          {hasFilters ? (
+            <p>Нічого не знайдено за цим фільтром.</p>
+          ) : (
+            <>
+              <p>Поки нікого немає.</p>
+              <p className="text-sm mt-2">Додайте тестового користувача в канал tets — він зʼявиться тут.</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="overflow-x-auto bg-white rounded-xl border">

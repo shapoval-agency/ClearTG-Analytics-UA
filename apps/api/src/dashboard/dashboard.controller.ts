@@ -35,8 +35,19 @@ export class DashboardController {
 
   @RequiresWorkspace()
   @Get('subscribers')
-  subscriberFeed(@WorkspaceId() workspaceId: string) {
-    return this.dashboard.getSubscriberFeed(workspaceId);
+  subscriberFeed(
+    @WorkspaceId() workspaceId: string,
+    @Query('channelId') channelId?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.dashboard.getSubscriberFeed(workspaceId, {
+      channelId,
+      status: status === 'active' || status === 'left' ? status : undefined,
+      search,
+      limit: limit ? Math.min(Number(limit) || 100, 5000) : undefined,
+    });
   }
 
   @RequiresWorkspace()

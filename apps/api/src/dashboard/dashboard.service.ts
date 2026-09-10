@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AttributionService } from '../attribution/attribution.service';
 import { ConversionService } from '../conversion/conversion.service';
-import { MembershipEventType } from '@cleartg/database';
+import { MembershipEventType, Prisma } from '@cleartg/database';
 import { kyivDayStart } from '@cleartg/shared';
 
 @Injectable()
@@ -200,9 +200,26 @@ export class DashboardService {
     );
   }
 
-  async getSubscriberFeed(workspaceId: string, limit = 100) {
+  async getSubscriberFeed(
+    workspaceId: string,
+    opts: { limit?: number; channelId?: string; status?: 'active' | 'left'; search?: string } = {},
+  ) {
+    const { limit = 100, channelId, status, search } = opts;
+
+    const where: Prisma.SubscriberProfileWhereInput = { workspaceId };
+    if (channelId) where.channelId = channelId;
+    // "Активний" профіль — той, що ще не має пов'язаної UnsubscribeEvent (див. коментар у schema.prisma).
+    if (status === 'active') where.unsubscribeEvents = { none: {} };
+    if (status === 'left') where.unsubscribeEvents = { some: {} };
+    if (search) {
+      where.OR = [
+        { telegramUserId: { contains: search } },
+        { membershipEvent: { telegramUsername: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
     const profiles = await this.prisma.subscriberProfile.findMany({
-      where: { workspaceId },
+      where,
       include: {
         channel: { select: { title: true } },
         membershipEvent: {
@@ -477,7 +494,7 @@ export class DashboardService {
   }
 
   async exportSubscribersCsv(workspaceId: string): Promise<string> {
-    const rows = await this.getSubscriberFeed(workspaceId, 5000);
+    const rows = await this.getSubscriberFeed(workspaceId, { limit: 5000 });
     const header =
       'subscribed_at,channel,username,telegram_user_id,status,source,attribution,campaign,utm_source,utm_campaign,confidence';
     const lines = rows.map((r) =>
