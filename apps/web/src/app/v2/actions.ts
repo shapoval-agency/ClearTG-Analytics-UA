@@ -154,3 +154,163 @@ export async function connectChannelV2Action(identifier: string) {
   revalidatePath('/v2/channels');
   return { error: null };
 }
+
+/* ─── Посилання ───────────────────────────────────────────────────────
+ *
+ * `linkMode` навмисно НЕ передається: бекенд виводить його з платформи
+ * кампанії (link-mode.ts) і відхилить неприпустиму комбінацію. Фронт не
+ * дублює це правило як джерело істини — лише ховає недоступні варіанти.
+ */
+
+/** Кампанія створюється прямо в конструкторі — окремого розділу немає (DEC-005). */
+export async function createCampaignV2Action(data: {
+  channelId: string;
+  name: string;
+  adPlatform: string;
+}) {
+  const headers = await channelHeaders(true);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', campaign: null };
+
+  const name = data.name.trim();
+  if (!name) return { error: 'Вкажіть назву кампанії', campaign: null };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/campaigns`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ channelId: data.channelId, name, adPlatform: data.adPlatform }),
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.', campaign: null };
+  }
+
+  if (!res.ok) {
+    return { error: await readError(res, 'Не вдалося створити кампанію'), campaign: null };
+  }
+
+  const campaign = (await res.json()) as { id: string; name: string; adPlatform: string };
+  revalidatePath('/v2/links');
+  return { error: null, campaign };
+}
+
+/** Посилання з мітками. */
+export async function createTrackingLinkV2Action(data: {
+  channelId: string;
+  campaignId?: string;
+  name?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  creativeTag?: string;
+}) {
+  const headers = await channelHeaders(true);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', link: null };
+
+  // Порожні рядки не відправляємо — інакше в БД осядуть порожні мітки.
+  const payload: Record<string, string> = { channelId: data.channelId };
+  for (const key of [
+    'campaignId', 'name', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'creativeTag',
+  ] as const) {
+    const value = data[key]?.trim();
+    if (value) payload[key] = value;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/tracking-links`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.', link: null };
+  }
+
+  if (!res.ok) {
+    return { error: await readError(res, 'Не вдалося створити посилання'), link: null };
+  }
+
+  const link = (await res.json()) as { publicPath: string; slug: string };
+  revalidatePath('/v2/links');
+  return { error: null, link };
+}
+
+/**
+ * Запрошувальне посилання.
+ *
+ * Бекенд робить живий виклик createChatInviteLink — якщо бот втратив права,
+ * повертається зрозуміла українська помилка, яку показуємо як є.
+ */
+export async function createSeedInviteLinkV2Action(data: {
+  channelId: string;
+  campaignId: string;
+  name: string;
+}) {
+  const headers = await channelHeaders(true);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', link: null };
+
+  const name = data.name.trim();
+  if (!name) return { error: 'Вкажіть назву джерела для цього посилання', link: null };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/invite-links`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ channelId: data.channelId, campaignId: data.campaignId, name }),
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.', link: null };
+  }
+
+  if (!res.ok) {
+    return { error: await readError(res, 'Не вдалося створити посилання'), link: null };
+  }
+
+  const link = (await res.json()) as { telegramInviteLink: string };
+  revalidatePath('/v2/links');
+  return { error: null, link };
+}
+
+/** Архівація посилання з мітками. Історія кліків зберігається. */
+export async function setTrackingLinkActiveV2Action(id: string, isActive: boolean) {
+  const headers = await channelHeaders();
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.' };
+
+  const res = await fetch(
+    `${API_URL}/api/tracking-links/${id}/${isActive ? 'activate' : 'archive'}`,
+    { method: 'PATCH', headers },
+  );
+
+  if (!res.ok) {
+    return {
+      error: await readError(
+        res,
+        isActive ? 'Не вдалося відновити посилання' : 'Не вдалося архівувати посилання',
+      ),
+    };
+  }
+
+  revalidatePath('/v2/links');
+  return { error: null };
+}
+
+/** Відкликання запрошувального посилання — Telegram перестає приймати по ньому вступ. */
+export async function revokeInviteLinkV2Action(id: string) {
+  const headers = await channelHeaders();
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.' };
+
+  const res = await fetch(`${API_URL}/api/invite-links/${id}/revoke`, {
+    method: 'PATCH',
+    headers,
+  });
+
+  if (!res.ok) {
+    return { error: await readError(res, 'Не вдалося відкликати посилання') };
+  }
+
+  revalidatePath('/v2/links');
+  return { error: null };
+}
