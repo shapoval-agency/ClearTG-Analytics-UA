@@ -153,6 +153,28 @@ export class TrackingService {
     });
   }
 
+  /**
+   * Фізичне видалення посилання (на відміну від setActive/архівації вище).
+   * Дозволено лише коли по посиланню ще немає жодного кліку: ClickEvent.trackingLinkId
+   * має onDelete: Cascade, тож видалення посилання зі статистикою назавжди знищило б
+   * її. Якщо кліки вже є — відмовляємо і пропонуємо архівувати замість видалення.
+   */
+  async deleteLink(workspaceId: string, id: string) {
+    const link = await this.prisma.trackingLink.findFirst({
+      where: { id, workspaceId },
+      include: { _count: { select: { clickEvents: true } } },
+    });
+    if (!link) throw new NotFoundException('Tracking link not found');
+
+    if (link._count.clickEvents > 0) {
+      throw new BadRequestException(
+        `Це посилання вже має ${link._count.clickEvents} клік(ів) — видалення знищить цю статистику назавжди. Заархівуйте посилання, якщо просто хочете прибрати його з активних.`,
+      );
+    }
+
+    await this.prisma.trackingLink.delete({ where: { id } });
+  }
+
   async getLinkBySlug(slug: string) {
     const link = await this.prisma.trackingLink.findUnique({
       where: { slug },

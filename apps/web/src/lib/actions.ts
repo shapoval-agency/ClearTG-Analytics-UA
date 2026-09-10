@@ -211,6 +211,22 @@ export async function setTrackingLinkActiveAction(id: string, isActive: boolean)
   revalidatePath('/links');
 }
 
+/** Фізичне видалення — бекенд блокує його, якщо по посиланню вже є кліки. */
+export async function deleteTrackingLinkAction(id: string) {
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
+
+  const res = await fetch(`${API_URL}/api/tracking-links/${id}`, { method: 'DELETE', headers });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return { error: (body as { message?: string | string[] }).message?.toString() ?? 'Не вдалося видалити посилання' };
+  }
+
+  revalidatePath('/links');
+  return { error: null };
+}
+
 /** Тип 2 з ТЗ — самостійне (не per-click) запрошувальне посилання під джерело. */
 export async function createSeedInviteLinkAction(data: {
   channelId: string;

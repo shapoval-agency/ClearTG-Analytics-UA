@@ -6,6 +6,7 @@ import { EmbedSnippet } from '@/components/EmbedSnippet';
 import { isLocalMode } from '@/lib/local-mode';
 import { LocalLinks } from '@/components/local/LocalLinks';
 import { setTrackingLinkActiveAction, revokeSeedInviteLinkAction } from '@/lib/actions';
+import { DeleteTrackingLinkButton } from '@/components/DeleteTrackingLinkButton';
 
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
 
@@ -136,6 +137,7 @@ export default async function LinksPage() {
                       {l.isActive ? 'Архівувати' : 'Активувати'}
                     </button>
                   </form>
+                  <DeleteTrackingLinkButton id={l.id} clickCount={l._count.clickEvents} />
                 </div>
               </div>
               <div className="flex gap-4 mt-3 text-sm text-slate-500">
