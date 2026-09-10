@@ -260,6 +260,23 @@ export class TrackingService {
     const apiOrigin = resolveFrontendUrl();
     const pageContext = this.buildPageContext(link, telegramUrl ?? 'https://t.me', clickEvent.id, apiOrigin);
 
+    /**
+     * Подія «Відкрив Telegram» (telegramOpenedAt) з ТЗ нормально фіксується
+     * JS-маячком (sendBeacon) зі сторінки-заглушки. Але коли autoRedirect
+     * увімкнено з нульовою затримкою — це дефолт для нових посилань —
+     * контролер взагалі не рендерить HTML, а одразу шле 302 (щоб перехід був
+     * миттєвим, без "мигання" сторінки). Без сторінки маячку нема звідки
+     * спрацювати, і telegramOpenedAt лишався б порожнім назавжди. Оскільки
+     * в цьому режимі сервер сам гарантовано відправляє браузер на
+     * telegramUrl, фіксуємо відкриття тут же, синхронно з кліком.
+     */
+    if (telegramUrl !== null && link.autoRedirect && link.redirectDelayMs === 0) {
+      await this.prisma.clickEvent.update({
+        where: { id: clickEvent.id },
+        data: { telegramOpenedAt: new Date() },
+      });
+    }
+
     return {
       clickEvent,
       pageContext,
