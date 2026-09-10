@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { isLocalMode } from '@/lib/local-mode';
 import { LocalChannels } from '@/components/local/LocalChannels';
 import { SyncChannelForm } from '@/components/SyncChannelForm';
+import { setChannelActiveAction } from '@/lib/actions';
+import { DeleteChannelButton } from '@/components/DeleteChannelButton';
 
 interface Channel {
   id: string;
@@ -58,27 +60,41 @@ export default async function ChannelsPage() {
         </>
       ) : (
         <div className="grid gap-4 mb-6">
-          {channels.map((ch) => (
-            <Link key={ch.id} href={`/channels/${ch.id}`} className="bg-white rounded-xl border border-slate-200 p-5 hover:border-brand-300 transition-colors block">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-medium">{ch.title}</h3>
-                  {ch.username ? (
-                    <p className="text-sm text-slate-500">@{ch.username}</p>
-                  ) : (
-                    <p className="text-sm text-slate-400">приватний канал (без @username)</p>
-                  )}
+          {channels.map((ch) => {
+            const hasData = ch._count.clickEvents > 0 || ch._count.membershipEvents > 0;
+            return (
+              <div key={ch.id} className="bg-white rounded-xl border border-slate-200 p-5">
+                <div className="flex justify-between items-start gap-4">
+                  <Link href={`/channels/${ch.id}`} className="hover:opacity-80 transition-opacity flex-1 min-w-0">
+                    <h3 className="font-medium">{ch.title}</h3>
+                    {ch.username ? (
+                      <p className="text-sm text-slate-500">@{ch.username}</p>
+                    ) : (
+                      <p className="text-sm text-slate-400">приватний канал (без @username)</p>
+                    )}
+                  </Link>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-xs px-2 py-1 rounded ${ch.botIsAdmin ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {ch.botIsAdmin ? 'Бот адмін' : 'Потрібні права'}
+                    </span>
+                    <span className={`text-xs px-2 py-1 rounded ${ch.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100'}`}>
+                      {ch.isActive ? 'Активний' : 'Архівний'}
+                    </span>
+                    <form action={setChannelActiveAction.bind(null, ch.id, !ch.isActive)}>
+                      <button type="submit" className="text-xs text-slate-500 underline hover:text-slate-700">
+                        {ch.isActive ? 'Архівувати' : 'Активувати'}
+                      </button>
+                    </form>
+                    <DeleteChannelButton id={ch.id} title={ch.title} hasData={hasData} />
+                  </div>
                 </div>
-                <span className={`text-xs px-2 py-1 rounded ${ch.botIsAdmin ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {ch.botIsAdmin ? 'Бот адмін' : 'Потрібні права'}
-                </span>
+                <Link href={`/channels/${ch.id}`} className="flex gap-4 mt-3 text-sm text-slate-500 hover:text-slate-700">
+                  <span>{ch._count.clickEvents} кліків</span>
+                  <span>{ch._count.membershipEvents} подій</span>
+                </Link>
               </div>
-              <div className="flex gap-4 mt-3 text-sm text-slate-500">
-                <span>{ch._count.clickEvents} кліків</span>
-                <span>{ch._count.membershipEvents} подій</span>
-              </div>
-            </Link>
-          ))}
+            );
+          })}
         </div>
       )}
 

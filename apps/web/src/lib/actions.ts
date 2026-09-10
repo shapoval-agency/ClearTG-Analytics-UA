@@ -227,6 +227,35 @@ export async function deleteTrackingLinkAction(id: string) {
   return { error: null };
 }
 
+/** Void return: bound directly as a <form action> in channels/page.tsx. */
+export async function setChannelActiveAction(id: string, isActive: boolean): Promise<void> {
+  const headers = await authHeaders();
+  if (!headers) return;
+
+  await fetch(
+    `${API_URL}/api/channels/${id}/${isActive ? 'activate' : 'archive'}`,
+    { method: 'PATCH', headers },
+  );
+
+  revalidatePath('/channels');
+}
+
+/** Фізичне видалення — бекенд блокує його, якщо по каналу вже є кампанії/статистика. */
+export async function deleteChannelAction(id: string) {
+  const headers = await authHeaders();
+  if (!headers) return { error: 'Not authenticated' };
+
+  const res = await fetch(`${API_URL}/api/channels/${id}`, { method: 'DELETE', headers });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return { error: (body as { message?: string | string[] }).message?.toString() ?? 'Не вдалося видалити канал' };
+  }
+
+  revalidatePath('/channels');
+  return { error: null };
+}
+
 /** Тип 2 з ТЗ — самостійне (не per-click) запрошувальне посилання під джерело. */
 export async function createSeedInviteLinkAction(data: {
   channelId: string;

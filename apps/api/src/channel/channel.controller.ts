@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
 import { ChannelService } from './channel.service';
 import { IsOptional, IsString } from 'class-validator';
 import { RequiresWorkspace } from '../common/decorators/auth.decorator';
@@ -53,5 +53,23 @@ export class ChannelController {
   @Post('sync-telegram')
   sync(@Body() dto: SyncChannelDto, @WorkspaceId() workspaceId: string) {
     return this.channel.syncFromTelegram(workspaceId, dto.username);
+  }
+
+  @RequiresWorkspace()
+  @Patch(':id/archive')
+  archive(@Param('id') id: string, @WorkspaceId() workspaceId: string) {
+    return this.channel.setActive(workspaceId, id, false);
+  }
+
+  @RequiresWorkspace()
+  @Patch(':id/activate')
+  activate(@Param('id') id: string, @WorkspaceId() workspaceId: string) {
+    return this.channel.setActive(workspaceId, id, true);
+  }
+
+  @RequiresWorkspace()
+  @Delete(':id')
+  delete(@Param('id') id: string, @WorkspaceId() workspaceId: string) {
+    return this.channel.deleteChannel(workspaceId, id);
   }
 }
