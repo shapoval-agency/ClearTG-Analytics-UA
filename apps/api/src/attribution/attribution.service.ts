@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { attributeSubscription, confidenceLabel } from '@cleartg/shared';
-import { AttributionType } from '@cleartg/database';
+import { attributeSubscription, confidenceLabel, kyivDateRange } from '@cleartg/shared';
+import { AttributionType, Prisma } from '@cleartg/database';
 
 @Injectable()
 export class AttributionService {
@@ -95,10 +95,26 @@ export class AttributionService {
     return attribution;
   }
 
-  async getAttributionStats(workspaceId: string) {
+  /**
+   * `channelId`/`from`/`to` — той самий необов'язковий фільтр, що й у
+   * DashboardService.getOverview(), який є єдиним викликачем цього методу.
+   * Період фільтрується по `membershipEvent.occurredAt` (моменту самої
+   * підписки), а не по `Attribution.createdAt` — узгоджено з тим, як
+   * getOverview рахує `subscribers` за той самий проміжок. Без опцій
+   * поведінка не змінюється.
+   */
+  async getAttributionStats(
+    workspaceId: string,
+    opts: { channelId?: string; from?: string; to?: string } = {},
+  ) {
+    const range = kyivDateRange(opts.from, opts.to);
+    const where: Prisma.AttributionWhereInput = { workspaceId };
+    if (opts.channelId) where.channelId = opts.channelId;
+    if (range) where.membershipEvent = { occurredAt: range };
+
     const attributions = await this.prisma.attribution.groupBy({
       by: ['attributionType'],
-      where: { workspaceId },
+      where,
       _count: true,
       _avg: { confidenceScore: true },
     });

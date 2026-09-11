@@ -8,7 +8,8 @@
     "start": "node dist/main",
     "test": "vitest run",
     "lint": "eslint \"{src,test}/**/*.ts\"",
-    "qa:smoke-tracking": "tsx scripts/qa/smoke-tracking-links.ts"
+    "qa:smoke-tracking": "tsx scripts/qa/smoke-tracking-links.ts",
+    "qa:smoke-reports": "tsx scripts/qa/smoke-reports.ts"
   },
   "dependencies": {
     "@cleartg/database": "workspace:*",

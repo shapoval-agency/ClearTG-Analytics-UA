@@ -3,7 +3,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AttributionService } from '../attribution/attribution.service';
 import { ConversionService } from '../conversion/conversion.service';
 import { MembershipEventType, Prisma, ConversionPlatform, ConversionEventStatus, AttributionType } from '@cleartg/database';
-import { kyivDayStart } from '@cleartg/shared';
+import { kyivDayStart, kyivDateRange } from '@cleartg/shared';
+
+/** Необов'язковий період і канал — спільна форма фільтра для звітів `/v2/reports`. */
+export interface ReportFilterOpts {
+  from?: string;
+  to?: string;
+  channelId?: string;
+}
 
 @Injectable()
 export class DashboardService {
@@ -13,23 +20,61 @@ export class DashboardService {
     private conversion: ConversionService,
   ) {}
 
-  async getOverview(workspaceId: string) {
-    const [clicks, subscribers, unsubscribes, attributions, deliveryStats] = await Promise.all([
-      this.prisma.clickEvent.count({ where: { workspaceId } }),
-      this.prisma.membershipEvent.count({
-        where: { workspaceId, eventType: MembershipEventType.SUBSCRIBE },
-      }),
-      this.prisma.unsubscribeEvent.count({ where: { workspaceId } }),
-      this.attribution.getAttributionStats(workspaceId),
+  /**
+   * `from`/`to`/`channelId` — необов'язкові й адитивні (S1-21/S2-01 з
+   * MVP_TECHNICAL_PLAN.md). Без них поведінка ідентична попередній: весь
+   * час, усі канали воркспейсу — жоден існуючий виклик (наразі єдиний —
+   * `DashboardController.overview()`) не ламається.
+   *
+   * Період застосовується скрізь як "подія СТАЛАСЬ у цьому проміжку", а не
+   * "стан станом на кінець проміжку" — так усі числа в одній відповіді
+   * лишаються порівнянними між собою (важливо для dataIntegrity нижче).
+   * `deliveryStats` — виняток: доставка в рекламу поза межами MVP `/v2/reports`,
+   * період/канал на неї свідомо не поширюємо.
+   */
+  async getOverview(workspaceId: string, opts: ReportFilterOpts = {}) {
+    const { channelId } = opts;
+    const range = kyivDateRange(opts.from, opts.to);
+
+    const clickWhere: Prisma.ClickEventWhereInput = { workspaceId };
+    if (channelId) clickWhere.channelId = channelId;
+    if (range) clickWhere.clickedAt = range;
+
+    const subscribeWhere: Prisma.MembershipEventWhereInput = {
+      workspaceId,
+      eventType: MembershipEventType.SUBSCRIBE,
+    };
+    if (channelId) subscribeWhere.channelId = channelId;
+    if (range) subscribeWhere.occurredAt = range;
+
+    const unsubscribeWhere: Prisma.UnsubscribeEventWhereInput = { workspaceId };
+    if (channelId) unsubscribeWhere.channelId = channelId;
+    if (range) unsubscribeWhere.occurredAt = range;
+
+    const [clicks, reached, subscribers, unsubscribes, attributions, deliveryStats] = await Promise.all([
+      this.prisma.clickEvent.count({ where: clickWhere }),
+      // S2-12: частка кліків, що дійсно дійшли до Telegram (ClickEvent.telegramOpenedAt).
+      this.prisma.clickEvent.count({ where: { ...clickWhere, telegramOpenedAt: { not: null } } }),
+      this.prisma.membershipEvent.count({ where: subscribeWhere }),
+      this.prisma.unsubscribeEvent.count({ where: unsubscribeWhere }),
+      this.attribution.getAttributionStats(workspaceId, { channelId, from: opts.from, to: opts.to }),
       this.conversion.getDeliveryStats(workspaceId),
     ]);
 
-    const clickToSubscribeRate = clicks > 0 ? subscribers / clicks : 0;
+    const clickToSubscribeRate = this.safeDivide(subscribers, clicks);
+    const reachRate = this.safeDivide(reached, clicks);
 
-    const retention = await this.getRetentionStats(workspaceId);
+    const retention = await this.getRetentionStats(workspaceId, { channelId, from: opts.from, to: opts.to });
+
+    const activeSubscribersWhere: Prisma.SubscriberProfileWhereInput = {
+      workspaceId,
+      unsubscribeEvents: { none: {} },
+    };
+    if (channelId) activeSubscribersWhere.channelId = channelId;
+    if (range) activeSubscribersWhere.subscribedAt = range;
 
     const activeSubscribers = await this.prisma.subscriberProfile.count({
-      where: { workspaceId, unsubscribeEvents: { none: {} } },
+      where: activeSubscribersWhere,
     });
 
     // П.17 з ТЗ: сума по всіх типах атрибуції (включно з "джерело невідоме")
@@ -37,7 +82,11 @@ export class DashboardService {
     // людей (наприклад, вже траплялось: гонка при одночасній підписці збігом
     // блокує створення Attribution, а MembershipEvent лишається без пари,
     // див. telegram.service.ts processSubscribe). Рахуємо тут же, без
-    // додаткового запиту — обидва числа вже отримані вище.
+    // додаткового запиту — обидва числа вже отримані вище. attributions вже
+    // відфільтровані по тому самому period/channelId (getAttributionStats
+    // вище), інакше при застосованому фільтрі periodу це порівняння
+    // помилково показувало б "губимо людей" там, де насправді просто
+    // порівнювались фільтровані підписки з нефільтрованою атрибуцією.
     const attributedCount = attributions.reduce((sum, a) => sum + a.count, 0);
     const dataIntegrity = {
       subscribers,
@@ -48,6 +97,8 @@ export class DashboardService {
 
     return {
       clicks,
+      reached,
+      reachRate,
       subscribers,
       activeSubscribers,
       unsubscribes,
@@ -59,9 +110,21 @@ export class DashboardService {
     };
   }
 
-  private async getRetentionStats(workspaceId: string) {
+  /** `denominator <= 0` → 0, а не `NaN`/`Infinity` — той самий запобіжник, що вже був для `conversionRate`. */
+  private safeDivide(numerator: number, denominator: number): number {
+    return denominator > 0 ? numerator / denominator : 0;
+  }
+
+  private async getRetentionStats(workspaceId: string, opts: ReportFilterOpts = {}) {
+    const range = kyivDateRange(opts.from, opts.to);
+    const where: Prisma.SubscriberProfileWhereInput = { workspaceId };
+    if (opts.channelId) where.channelId = opts.channelId;
+    // Ретеншн лічимо для тих, хто ПІДПИСАВСЯ в цьому періоді — узгоджено з
+    // тим, як period застосовується до решти getOverview (розділ вище).
+    if (range) where.subscribedAt = range;
+
     const profiles = await this.prisma.subscriberProfile.findMany({
-      where: { workspaceId },
+      where,
       select: { retainedD1: true, retainedD7: true, retainedD30: true },
     });
 
@@ -105,27 +168,51 @@ export class DashboardService {
     });
   }
 
-  async getCampaignReports(workspaceId: string) {
+  async getCampaignReports(workspaceId: string, opts: ReportFilterOpts = {}) {
+    const range = kyivDateRange(opts.from, opts.to);
+
+    const campaignWhere: Prisma.CampaignWhereInput = { workspaceId, isActive: true };
+    if (opts.channelId) campaignWhere.channelId = opts.channelId;
+
     const campaigns = await this.prisma.campaign.findMany({
-      where: { workspaceId, isActive: true },
+      where: campaignWhere,
       include: { channel: { select: { title: true } } },
       orderBy: { createdAt: 'desc' },
     });
 
     return Promise.all(
       campaigns.map(async (campaign) => {
-        const [clicks, subscribers, unsubscribes, uniqueClickers] = await Promise.all([
-          this.prisma.clickEvent.count({ where: { campaignId: campaign.id } }),
-          this.prisma.attribution.count({
-            where: {
-              campaignId: campaign.id,
-              membershipEvent: { eventType: MembershipEventType.SUBSCRIBE },
-            },
-          }),
-          this.prisma.unsubscribeEvent.count({
-            where: { channelId: campaign.channelId },
-          }),
-          this.countUniqueClickers(campaign.id, undefined),
+        const clickWhere: Prisma.ClickEventWhereInput = { campaignId: campaign.id };
+        if (range) clickWhere.clickedAt = range;
+
+        const subscribedWhere: Prisma.AttributionWhereInput = {
+          campaignId: campaign.id,
+          membershipEvent: {
+            eventType: MembershipEventType.SUBSCRIBE,
+            ...(range ? { occurredAt: range } : {}),
+          },
+        };
+
+        // Було: `unsubscribeEvent.count({ where: { channelId: campaign.channelId } })` —
+        // рахувало ВСІ відписки каналу на кожен рядок, однаково для будь-якої
+        // кампанії того самого каналу. Знайдено 2026-09-11 (v2-reports-plan.md,
+        // розділ 4): при двох активних кампаніях на одному каналі обидві
+        // показували б однакове число. Фікс — той самий ланцюжок через
+        // атрибуцію, що вже коректно працює в getTrackingLinkReports нижче.
+        const unsubscribedWhere: Prisma.UnsubscribeEventWhereInput = {
+          channelId: campaign.channelId,
+          subscriberProfile: {
+            membershipEvent: { attribution: { campaignId: campaign.id } },
+          },
+        };
+        if (range) unsubscribedWhere.occurredAt = range;
+
+        const [clicks, reached, subscribers, unsubscribes, uniqueClickers] = await Promise.all([
+          this.prisma.clickEvent.count({ where: clickWhere }),
+          this.prisma.clickEvent.count({ where: { ...clickWhere, telegramOpenedAt: { not: null } } }),
+          this.prisma.attribution.count({ where: subscribedWhere }),
+          this.prisma.unsubscribeEvent.count({ where: unsubscribedWhere }),
+          this.countUniqueClickers(campaign.id, undefined, range),
         ]);
 
         return {
@@ -134,10 +221,12 @@ export class DashboardService {
           adPlatform: campaign.adPlatform,
           channelTitle: campaign.channel.title,
           clicks,
+          reached,
+          reachRate: this.safeDivide(reached, clicks),
           uniqueClickers,
           subscribers,
           unsubscribes,
-          conversionRate: clicks > 0 ? subscribers / clicks : 0,
+          conversionRate: this.safeDivide(subscribers, clicks),
           spendAmount: campaign.spendAmount,
         };
       }),
@@ -153,17 +242,28 @@ export class DashboardService {
    * однієї мережі й однаковим браузером зіллються в один рядок — це відома
    * похибка методу, а не помилка підрахунку.
    */
-  private async countUniqueClickers(campaignId?: string, trackingLinkId?: string) {
+  private async countUniqueClickers(
+    campaignId?: string,
+    trackingLinkId?: string,
+    range?: { gte?: Date; lt?: Date },
+  ) {
+    const where: Prisma.ClickEventWhereInput = { campaignId, trackingLinkId };
+    if (range) where.clickedAt = range;
     const groups = await this.prisma.clickEvent.groupBy({
       by: ['ipHash', 'userAgentHash'],
-      where: { campaignId, trackingLinkId },
+      where,
     });
     return groups.length;
   }
 
-  async getTrackingLinkReports(workspaceId: string) {
+  async getTrackingLinkReports(workspaceId: string, opts: ReportFilterOpts = {}) {
+    const range = kyivDateRange(opts.from, opts.to);
+
+    const linkWhere: Prisma.TrackingLinkWhereInput = { workspaceId };
+    if (opts.channelId) linkWhere.channelId = opts.channelId;
+
     const links = await this.prisma.trackingLink.findMany({
-      where: { workspaceId },
+      where: linkWhere,
       include: {
         campaign: { select: { name: true } },
         channel: { select: { title: true } },
@@ -173,23 +273,31 @@ export class DashboardService {
 
     return Promise.all(
       links.map(async (link) => {
-        const [clicks, subscribers, unsubscribes, uniqueClickers] = await Promise.all([
-          this.prisma.clickEvent.count({ where: { trackingLinkId: link.id } }),
-          this.prisma.attribution.count({
-            where: {
-              trackingLinkId: link.id,
-              membershipEvent: { eventType: MembershipEventType.SUBSCRIBE },
-            },
-          }),
-          this.prisma.unsubscribeEvent.count({
-            where: {
-              channelId: link.channelId,
-              subscriberProfile: {
-                membershipEvent: { attribution: { trackingLinkId: link.id } },
-              },
-            },
-          }),
-          this.countUniqueClickers(undefined, link.id),
+        const clickWhere: Prisma.ClickEventWhereInput = { trackingLinkId: link.id };
+        if (range) clickWhere.clickedAt = range;
+
+        const subscribedWhere: Prisma.AttributionWhereInput = {
+          trackingLinkId: link.id,
+          membershipEvent: {
+            eventType: MembershipEventType.SUBSCRIBE,
+            ...(range ? { occurredAt: range } : {}),
+          },
+        };
+
+        const unsubscribedWhere: Prisma.UnsubscribeEventWhereInput = {
+          channelId: link.channelId,
+          subscriberProfile: {
+            membershipEvent: { attribution: { trackingLinkId: link.id } },
+          },
+        };
+        if (range) unsubscribedWhere.occurredAt = range;
+
+        const [clicks, reached, subscribers, unsubscribes, uniqueClickers] = await Promise.all([
+          this.prisma.clickEvent.count({ where: clickWhere }),
+          this.prisma.clickEvent.count({ where: { ...clickWhere, telegramOpenedAt: { not: null } } }),
+          this.prisma.attribution.count({ where: subscribedWhere }),
+          this.prisma.unsubscribeEvent.count({ where: unsubscribedWhere }),
+          this.countUniqueClickers(undefined, link.id, range),
         ]);
 
         return {
@@ -199,10 +307,12 @@ export class DashboardService {
           campaignName: link.campaign?.name ?? null,
           channelTitle: link.channel.title,
           clicks,
+          reached,
+          reachRate: this.safeDivide(reached, clicks),
           uniqueClickers,
           subscribers,
           unsubscribes,
-          conversionRate: clicks > 0 ? subscribers / clicks : 0,
+          conversionRate: this.safeDivide(subscribers, clicks),
           autoRedirect: link.autoRedirect,
         };
       }),
@@ -217,12 +327,16 @@ export class DashboardService {
       status?: 'active' | 'left';
       search?: string;
       attributionType?: AttributionType;
+      from?: string;
+      to?: string;
     } = {},
   ) {
-    const { limit = 100, channelId, status, search, attributionType } = opts;
+    const { limit = 100, channelId, status, search, attributionType, from, to } = opts;
+    const range = kyivDateRange(from, to);
 
     const where: Prisma.SubscriberProfileWhereInput = { workspaceId };
     if (channelId) where.channelId = channelId;
+    if (range) where.subscribedAt = range;
     // "Активний" профіль — той, що ще не має пов'язаної UnsubscribeEvent (див. коментар у schema.prisma).
     if (status === 'active') where.unsubscribeEvents = { none: {} };
     if (status === 'left') where.unsubscribeEvents = { some: {} };
@@ -303,17 +417,20 @@ export class DashboardService {
 
   async getUnsubscribeFeed(
     workspaceId: string,
-    opts: { limit?: number; channelId?: string; search?: string } = {},
+    opts: { limit?: number; channelId?: string; search?: string; from?: string; to?: string } = {},
   ) {
-    const { limit = 100, channelId, search } = opts;
+    const { limit = 100, channelId, search, from, to } = opts;
+    const range = kyivDateRange(from, to);
 
     // Фільтруємо тільки по полях, що завжди лежать прямо на UnsubscribeEvent
-    // (channelId, telegramUserId/Username) — attributionType навмисно НЕ фільтруємо
-    // тут на рівні БД: він береться або з e.subscriberProfile, або з fallback-профілю,
-    // знайденого нижче в JS уже після вибірки (коли subscriberProfileId порожній),
-    // тож DB-фільтр по вкладеній attribution пропустив би саме ці fallback-випадки.
+    // (channelId, telegramUserId/Username, occurredAt) — attributionType навмисно НЕ
+    // фільтруємо тут на рівні БД: він береться або з e.subscriberProfile, або з
+    // fallback-профілю, знайденого нижче в JS уже після вибірки (коли
+    // subscriberProfileId порожній), тож DB-фільтр по вкладеній attribution
+    // пропустив би саме ці fallback-випадки.
     const where: Prisma.UnsubscribeEventWhereInput = { workspaceId };
     if (channelId) where.channelId = channelId;
+    if (range) where.occurredAt = range;
     if (search) {
       where.OR = [
         { telegramUserId: { contains: search } },

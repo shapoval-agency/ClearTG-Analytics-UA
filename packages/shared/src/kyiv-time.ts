@@ -43,3 +43,46 @@ export function kyivDayStart(now: Date, daysAgo = 0): Date {
   );
   return new Date(dayStartShifted - offset);
 }
+
+/**
+ * Перетворює необов'язкові `from`/`to` (календарні дати чи будь-які
+ * ISO-рядки — беремо лише те, на який київський день припадає момент) на
+ * Prisma-сумісний діапазон `{ gte, lt }` для DateTime-фільтра. Той самий
+ * прийом, що вже використовує `getDailyDigest` для `day`/`next`: межі
+ * рахуються за київським календарним днем, а не за UTC-зрізом рядка, —
+ * інакше клік о 23:59 і підписка о 00:01 (Київ) можуть розʼїхатись по
+ * різних добах в звіті, хоча для людини це одна й та сама ніч.
+ *
+ * `from` включно з початку свого дня, `to` включно по кінець свого дня
+ * (тобто до початку наступного). Порожній/невалідний рядок — як
+ * відсутній параметр: не звужує фільтр, а не кидає помилку (той самий
+ * підхід, що вже прийнятий в dashboard.controller.ts для інших
+ * query-параметрів — невідоме значення тихо ігнорується, а не 400).
+ *
+ * Повертає `undefined`, якщо жодної межі задати не вдалось — виклик на
+ * стороні сервісу тоді просто не додає це поле у Prisma `where`, і
+ * поведінка лишається такою, як була до фільтра періоду.
+ */
+export function kyivDateRange(
+  from?: string | null,
+  to?: string | null,
+): { gte?: Date; lt?: Date } | undefined {
+  const range: { gte?: Date; lt?: Date } = {};
+
+  if (from) {
+    const fromDate = new Date(from);
+    if (!Number.isNaN(fromDate.getTime())) {
+      range.gte = kyivDayStart(fromDate, 0);
+    }
+  }
+
+  if (to) {
+    const toDate = new Date(to);
+    if (!Number.isNaN(toDate.getTime())) {
+      // Верхня межа виключна — початок доби ПІСЛЯ "to", щоб сам день "to" увійшов повністю.
+      range.lt = kyivDayStart(toDate, -1);
+    }
+  }
+
+  return range.gte || range.lt ? range : undefined;
+}

@@ -12,8 +12,13 @@ export class DashboardController {
 
   @RequiresWorkspace()
   @Get('overview')
-  overview(@WorkspaceId() workspaceId: string) {
-    return this.dashboard.getOverview(workspaceId);
+  overview(
+    @WorkspaceId() workspaceId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+  ) {
+    return this.dashboard.getOverview(workspaceId, { from, to, channelId });
   }
 
   @RequiresWorkspace()
@@ -35,14 +40,24 @@ export class DashboardController {
 
   @RequiresWorkspace()
   @Get('campaigns')
-  campaignReports(@WorkspaceId() workspaceId: string) {
-    return this.dashboard.getCampaignReports(workspaceId);
+  campaignReports(
+    @WorkspaceId() workspaceId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+  ) {
+    return this.dashboard.getCampaignReports(workspaceId, { from, to, channelId });
   }
 
   @RequiresWorkspace()
   @Get('tracking-links')
-  trackingLinkReports(@WorkspaceId() workspaceId: string) {
-    return this.dashboard.getTrackingLinkReports(workspaceId);
+  trackingLinkReports(
+    @WorkspaceId() workspaceId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+  ) {
+    return this.dashboard.getTrackingLinkReports(workspaceId, { from, to, channelId });
   }
 
   @RequiresWorkspace()
@@ -54,6 +69,8 @@ export class DashboardController {
     @Query('search') search?: string,
     @Query('attributionType') attributionType?: string,
     @Query('limit') limit?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
     const validAttributionTypes = ['EXACT_CLICK_INVITE', 'CAMPAIGN_INVITE', 'PROBABILISTIC', 'ORGANIC', 'UNKNOWN'];
     return this.dashboard.getSubscriberFeed(workspaceId, {
@@ -64,6 +81,8 @@ export class DashboardController {
         ? (attributionType as AttributionType)
         : undefined,
       limit: limit ? Math.min(Number(limit) || 100, 5000) : undefined,
+      from,
+      to,
     });
   }
 
@@ -97,11 +116,15 @@ export class DashboardController {
     @Query('channelId') channelId?: string,
     @Query('search') search?: string,
     @Query('limit') limit?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
     return this.dashboard.getUnsubscribeFeed(workspaceId, {
       channelId,
       search,
       limit: limit ? Math.min(Number(limit) || 100, 5000) : undefined,
+      from,
+      to,
     });
   }
 
