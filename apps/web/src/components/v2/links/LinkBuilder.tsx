@@ -362,7 +362,7 @@ export function LinkBuilder({
           <p className="font-mono text-sm text-slate-900 break-all">{plainUrl}</p>
           <p className="text-sm text-amber-800 mt-2">
             Підписників за цим посиланням не можна точно пов’язати з джерелом — у звітах
-            вони будуть як «джерело не визначене».
+            вони будуть як «джерело не визначено».
           </p>
           <div className="mt-3">
             <CopyButton value={plainUrl} />

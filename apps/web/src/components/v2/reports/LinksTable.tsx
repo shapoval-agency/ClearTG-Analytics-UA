@@ -12,7 +12,7 @@ export function LinksTable({ rows }: { rows: TrackingLinkReportRow[] }) {
       <Card title="Посилання">
         <EmptyState
           title="Ще немає жодного трекінгового посилання"
-          description="Трекінгове посилання дає точну атрибуцію — видно, який саме клік привів підписника."
+          description="Трекінгове посилання дає точне джерело — видно, який саме клік привів підписника."
           action={
             <Link href="/v2/links" className="text-sm text-brand-600 hover:underline">
               Створити посилання

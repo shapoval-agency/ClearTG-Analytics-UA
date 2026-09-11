@@ -11,7 +11,10 @@ import type { CampaignReportRow } from '@/lib/api';
  * `unattributedSubscribers` — різниця між загальною кількістю підписок
  * (verhній блок) і сумою підписок по кампаніях нижче. Рахується на сторінці,
  * не тут, бо залежить від overview. Якщо > 0 — окремий чесний рядок
- * «Джерело невідоме», а не мовчазна розбіжність сум і не вигадане джерело.
+ * «Джерело не визначено», а не мовчазна розбіжність сум і не вигадане джерело.
+ * Формулювання узгоджене з карткою учасника (CORE_MVP_UX_AUDIT.md, розділ 3) —
+ * раніше тут було «Джерело невідоме», бекенд це поле не диктує, це власний
+ * текст цього компонента.
  */
 export function SourcesTable({
   rows,
@@ -69,7 +72,7 @@ export function SourcesTable({
             {unattributedSubscribers > 0 && (
               <tr className="border-t border-dashed border-slate-200">
                 <td className="py-2.5 px-5">
-                  <p className="text-slate-500 italic">Джерело невідоме</p>
+                  <p className="text-slate-500 italic">Джерело не визначено</p>
                   <p className="text-xs text-slate-400">
                     Не прив&apos;язано до жодної кампанії з переліку вище — пряме посилання, посилання без кампанії або вступ поза рекламою
                   </p>

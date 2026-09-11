@@ -19,7 +19,7 @@ const NAV = [
   { href: '/v2', label: 'Огляд', hint: 'Що сталося і чи є проблема' },
   { href: '/v2/channels', label: 'Канали', hint: 'Підключення і стан' },
   { href: '/v2/links', label: 'Посилання', hint: 'Створення і мітки' },
-  { href: '/v2/reports', label: 'Звіти', hint: 'Джерела і якість даних' },
+  { href: '/v2/reports', label: 'Звіти', hint: 'Джерела і наскільки їм довіряти' },
   { href: '/v2/subscribers', label: 'Учасники', hint: 'Люди і їх джерело' },
 ];
 
@@ -47,7 +47,10 @@ export function V2Shell({
           <Link href="/v2" className="font-semibold text-lg text-brand-700">
             ClearTG
           </Link>
-          <p className="text-xs text-slate-400 mt-0.5">Новий кабінет</p>
+          {/* Раніше тут було «Новий кабінет» — технічна назва про сам продукт
+              (порівняння зі старим кабінетом), а не про користь для клієнта.
+              CORE_MVP_UX_AUDIT.md, розділ 1, знахідка 1. */}
+          <p className="text-xs text-slate-400 mt-0.5">Звідки приходять підписники</p>
           {me && (
             <WorkspacePicker me={me} activeWorkspaceId={activeWorkspaceId} />
           )}
