@@ -46,6 +46,8 @@ export class AuthError extends Error {
 
 export interface DashboardOverview {
   clicks: number;
+  reached: number;
+  reachRate: number;
   subscribers: number;
   activeSubscribers: number;
   unsubscribes: number;
@@ -59,6 +61,38 @@ export interface DashboardOverview {
   }>;
   dataIntegrity: { subscribers: number; attributed: number; missing: number; ok: boolean };
   deliveryStats: Array<{ status: string; count: number }>;
+}
+
+/** GET /api/dashboard/campaigns — розріз «Джерела» в /v2/reports. */
+export interface CampaignReportRow {
+  id: string;
+  name: string;
+  adPlatform: string;
+  channelTitle: string;
+  clicks: number;
+  reached: number;
+  reachRate: number;
+  uniqueClickers: number;
+  subscribers: number;
+  unsubscribes: number;
+  conversionRate: number;
+}
+
+/** GET /api/dashboard/tracking-links — розріз «Посилання» в /v2/reports. */
+export interface TrackingLinkReportRow {
+  id: string;
+  slug: string;
+  name: string | null;
+  campaignName: string | null;
+  channelTitle: string;
+  clicks: number;
+  reached: number;
+  reachRate: number;
+  uniqueClickers: number;
+  subscribers: number;
+  unsubscribes: number;
+  conversionRate: number;
+  autoRedirect: boolean;
 }
 
 export interface AuthMe {

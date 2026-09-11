@@ -11,7 +11,7 @@
 | Версия | ClearTG v2 |
 | Новый кабинет | `/v2` (внутри `apps/web`, префикс маршрутов) |
 | Старый кабинет | сохранён и работает — все 19 пунктов меню, все страницы 200 |
-| Backend | **не переписывался** — используются существующие API |
+| Backend | **не переписывался** — используются существующие API. С 2026-09-11 получил первые правки под Reports: 1 багфикс + аддитивные `from/to/channelId` + `reached/reachRate` ([`v2-reports-backend-review.md`](./v2-reports-backend-review.md)) |
 | База данных | **не менялась** — ни новых таблиц, ни новых полей, ни миграций |
 
 Единственная правка старого кода за всё время: **8 строк** в [AppShell.tsx](../../apps/web/src/components/AppShell.tsx) — `/v2` добавлен в `NO_SHELL` и появилась ссылка «Новий кабінет →».
@@ -45,9 +45,22 @@
 - обычная `t.me` — информационный вариант, сущность не создаётся
 - архивирование, восстановление, отзыв инвайтов, копирование адреса
 
+### v2 Reports — ✅ готово (backend + frontend, 2026-09-11)
+
+Документы: [`v2-reports-plan.md`](./v2-reports-plan.md) (анализ) → [`v2-reports-backend-review.md`](./v2-reports-backend-review.md) (backend) → [`v2-reports-ui-plan.md`](./v2-reports-ui-plan.md) (план UI) → [`V2_REPORTS_UI_REVIEW.md`](./V2_REPORTS_UI_REVIEW.md) (что сделано).
+
+- верхний блок — 6 показателей: клики, доля дошедших до Telegram, подписки, отписки, чистый прирост, конверсия
+- «Джерела» — разрез по кампаниям + честная строка «Джерело невідоме», когда часть подписчиков не привязана ни к одной кампании
+- «Посилання» — разрез по трекинговым ссылкам
+- фильтры: период (4 пресета) + канал, состояние живёт в URL
+- пять состояний интерфейса: загрузка, нет каналов, два вида «нет данных», ошибка, успех
+- проверено на реальных данных рабочего пространства против прямого SQL-запроса и живым браузером (Playwright) — 0 ошибок консоли на всех 31 странице кабинета (старый + v2)
+
 ### Разделы-заглушки
 
-`/v2/reports` и `/v2/subscribers` — каркас со списком запланированных функций и отметками готовности API.
+`/v2/subscribers` — единственный из пяти MVP-разделов, который ещё не начат (каркас со списком запланированных функций). Backend под него готов ещё со старого кабинета (`getSubscriberFeed()`, `getSubscriberDossier()`), фронтенд — нет.
+
+«Огляд» (`/v2`, корень) технически существует, но это по-прежнему временная проверка соединения ([page.tsx](../../apps/web/src/app/v2/page.tsx)), а не полноценный S1-21 — полноценным разделом MVP пока не считается.
 
 ---
 
@@ -65,6 +78,10 @@
 
 Не отдельный раздел MVP. Создаются внутри конструктора ссылки через существующий `POST /api/campaigns`. Минимально: название + источник.
 
+### Источники = кампании
+
+В «Звітах» нет отдельных блоков «источники» и «кампании» — это один и тот же разрез (`getCampaignReports()` уже группирует по кампании). Раздвоение на два визуально одинаковых блока не добавляет информации.
+
 ### Удаление
 
 Удаление ссылок и каналов **запрещено** в UI. Только два состояния: активная / архивная. Причина — `onDelete: Cascade` уничтожит историю кликов и атрибуции.
@@ -73,7 +90,7 @@
 
 ### Доступ к API
 
-Все обращения — только через **server actions**. Клиентский `fetch` через прокси `/api/[...path]` возвращает 401: `JwtAuthGuard` читает только заголовок `Authorization`, а браузер шлёт cookie.
+Мутации — только через **server actions**. Чтение — прямой серверный `fetch` через `lib/api.ts`. Клиентский `fetch` через прокси `/api/[...path]` возвращает 401: `JwtAuthGuard` читает только заголовок `Authorization`, а браузер шлёт cookie.
 
 ---
 
@@ -81,14 +98,18 @@
 
 | Проверка | Результат |
 |---|---|
-| TypeScript | ✅ 0 ошибок |
+| TypeScript | ✅ 0 ошибок (`apps/web` и `apps/api`) |
 | Production build | ✅ 39/39 страниц |
 | Старый кабинет | ✅ все страницы 200, меню 19/19 |
-| Browser console | ✅ чисто во всех сценариях |
-| Тесты | ✅ 73 (shared) + 4 (api) + 8 (channel-status) + 28 (link-kind) |
-| Тестовые данные | ✅ удалены, счётчики БД вернулись к исходным |
+| Browser console | ✅ чисто во всех сценариях, включая полный обход 31 страницы (27 старого кабинета + 4 v2) через реальный staging-логин |
+| Тесты | ✅ 81 (shared) + 23 (api) + 8 (channel-status) + 28 (link-kind) |
+| Тестовые данные | ✅ удалены, счётчики БД вернулись к исходным (включая временное рабочее пространство для проверки пустого состояния Reports) |
+| Backend `/v2/reports` | ✅ `pnpm --filter @cleartg/api build` — 0 ошибок · живой QA `qa:smoke-reports` — 10/10 против реального Postgres |
+| Frontend `/v2/reports` | ✅ рендер сверен с прямым SQL-запросом (каждое число совпало); 4 пресета периода дали согласованные разные числа; фильтр канала — корректно; все 5 состояний интерфейса — живым скриншотом либо прямым прецедентом из уже проверенного модуля |
 
-Тесты `channel-status` и `link-kind` — чистая логика, гоняются вручную через `tsx`, **в CI не входят**.
+Тесты `channel-status` и `link-kind` — чистая логика, гоняются вручную через `tsx`, **в CI не входят**. Тесты api (`dashboard.service.spec.ts` + `attribution.service.spec.ts`, 19 штук) — под vitest, **в `pnpm test` уже входят**.
+
+⚠️ **`pnpm --filter @cleartg/api build` (`nest build`) сам по себе не гарантирует 0 ошибок типов** — в этой сессии он пропустил 7 реальных ошибок в тестовом файле, которые показал только `pnpm dev:api` (`nest start --watch`). Проверять обоими способами, не полагаться на один `build`.
 
 ---
 
@@ -103,6 +124,9 @@
 | `next build` одновременно с `next dev` | ⚠️ **не запускать** — сборка перезаписывает `.next` и ломает dev-сервер (500, `MODULE_NOT_FOUND`) |
 | `pnpm dev:api` вызывает `deleteWebhook()` | ⚠️ для проверок без Telegram запускать `TELEGRAM_USE_POLLING=false pnpm dev:api` |
 | Dev-порт web — **3002**, не 3000 | README устарел |
+| `getCampaignReports()` считал отписки по всему каналу, а не по кампании | ✅ найдено и исправлено 2026-09-11 — тот же паттерн через `attribution.campaignId`, что уже был у `getTrackingLinkReports()`. Регресс закрыт юнит-тестом и живым прогоном против реального Postgres (10/10) |
+| `nest build` не ловит часть ошибок типов, которые ловит `nest start --watch` | ⚠️ см. раздел 4 — проверять обоими способами |
+| Staging-логин для живых UI-проверок | `test@cleartg.ua` / `cleartg123`, работает только при `STAGING_MODE=true` (уже включено в `.env`). Принадлежит рабочему пространству «Кабінет клієнта (demo)» с реальными тестовыми данными — удобно для сверки чисел против SQL |
 
 ### Баги старого кабинета (не трогали)
 
@@ -119,9 +143,9 @@
 
 Подробности и готовые SQL — в [`DATA_TRUST_CHECK.md`](./DATA_TRUST_CHECK.md).
 
-- [ ] Проверить старое unique-ограничение на **staging и prod** (локально чисто)
-- [ ] Проверить reach: `telegramOpenedAt` — **45 кликов, 0 заполненных**, фикс `4b53f4c` без единого подтверждения
-- [ ] Проверить resubscribe реальным сценарием — **0 циклов в данных**, исправление не подтверждено практикой
+- [ ] Проверить старое unique-ограничение на **staging и prod** (локально чисто, вне доступа агента)
+- [x] **Закрыто 2026-09-11.** Reach: `telegramOpenedAt` подтверждён живым прогоном `qa:smoke-tracking` (8/8). Старые клики в базе — все до фикса `4b53f4c`, «45/0» — история, а не баг.
+- [ ] Проверить resubscribe реальным сценарием — **всё ещё 0 циклов в данных**, исправление не подтверждено практикой
 
 ### v2 Links
 
@@ -132,23 +156,31 @@
 - [ ] Живая проверка сценария «ссылок нет» (проверен только по коду)
 - [ ] Мобильная вёрстка
 
+### v2 Reports
+
+- [x] Backend: багфикс, `from/to/channelId`, `reached`/`reachRate`
+- [x] Frontend: верхний блок, «Джерела», «Посилання», фильтры, 5 состояний
+- [ ] Экспорт отчёта — конфликт MVP_SCOPE.md ↔ бриф, решение владельца не зафиксировано в DECISIONS.md
+- [ ] Полный разбор по 5 типам атрибуции отдельным блоком (сейчас — только строка «Джерело невідоме»)
+- [ ] Ленты подписок/отписок с источником — ответственность `/v2/subscribers`
+- [ ] Сравнение с предыдущим периодом
+- [ ] Пагинация, мобильная вёрстка таблиц — тот же долг, что и в `/v2/links`
+- [ ] `eslint` не проверялся — бинарник не установлен в этом окружении, не зависит от задачи
+
 ---
 
 ## 7. Следующий шаг
 
-**Следующий модуль: `/v2/reports`**
+**MVP: 3 из 5 разделов полностью готовы (Канали, Посилання, Звіти). Осталось: Учасники (не начат), Огляд (только каркас-заглушка).**
 
-Перед реализацией — этап анализа:
+Оба следующих раздела теперь дешевле, чем были бы без Reports:
 
-1. **Dashboard API** — `getCampaignReports()`, `getTrackingLinkReports()`, `getSubscriberFeed()`, `getUnsubscribeFeed()`
-2. **Фильтр периода** — его нет ни в одном методе, считают за всё время. Нужны аддитивные `?from=&to=&channelId=`
-3. **`telegramOpenedAt`** — поле заполняется, агрегации нет. Нужен `count(telegramOpenedAt != null)` рядом с `clicks`
-4. **Атрибуция** — 5 типов и `confidenceScore` переносятся как есть, новой логики не пишем
-5. **Data trust** — отчёты строятся поверх данных, которым пока нет полного подтверждения
+- **Огляд (S1-21)** — раньше блокировался отсутствием `from/to` в `getOverview()`. Теперь метод их принимает (сделано под Reports), и сама страница уже дёргает `GET /api/dashboard/overview` без фильтра. Полноценный Огляд с периодом и сравнением, по сути, — достройка существующего каркаса поверх уже готового backend, без нового анализа и без нового backend.
+- **Учасники (S2-22)** — backend полностью готов ещё со старого кабинета (`getSubscriberFeed()` с фильтрами, `getSubscriberDossier()`), фронтенда нет вообще. По объёму сопоставимо с тем, что уже сделано для Reports, но без backend-этапа.
 
-> ⚠️ Это первый модуль, требующий **изменений бэкенда**. Только аддитивных: новые необязательные query-параметры, без правки существующих сигнатур.
+Выбор порядка — решение следующей сессии или владельца, оба варианта не требуют нового анализа с нуля.
 
-Порядок работы прежний: **анализ → план → код → тест**. План в `docs/new-dashboard/v2-reports-plan.md`, отчёт в `V2_REPORTS_REVIEW.md`.
+Не закрыто независимо от выбора: конфликт по экспорту (MVP_SCOPE.md включает его в критерии готовности MVP, бриф Reports — исключал; решения в DECISIONS.md нет), DATA TRUST resubscribe и staging/prod-проверка (раздел 6).
 
 ---
 
@@ -172,46 +204,70 @@ pnpm dev:web                              # :3002
 
 Новый кабинет: **http://localhost:3002/v2**
 
+Для живых UI-проверок без реального Telegram-входа — staging-логин на `/login` (вкладка «Пароль»): `test@cleartg.ua` / `cleartg123`. Работает только при `STAGING_MODE=true` (уже включено в `.env`/`apps/api/.env`).
+
+### Если `pnpm` не резолвится в новой Bash-сессии
+
+На этой машине бывает, что чистая (non-interactive) shell-сессия не видит `pnpm` в `PATH`, даже когда `node`/`corepack` есть. Разовый фикс: `corepack enable` — создаёт `pnpm`-шим в `/opt/homebrew/bin`, дальше работает как обычно, включая вложенные вызовы внутри npm-скриптов.
+
+### Живая browser-проверка
+
+`playwright` не входит в зависимости монорепозитория, но браузер (chromium) уже закеширован на машине (`~/Library/Caches/ms-playwright`). Для разового скрипта проверки: `npm install playwright --no-save` в любой временной директории (например, scratchpad), затем обычный node-скрипт с `require('playwright')`. Логин — тот же staging-флоу выше; кнопка входа делает клиентский `router.push`, а не полноценную навигацию — ждать нужно `page.waitForURL(...)`, а не `page.waitForNavigation(...)`.
+
 ---
 
 ## 9. Состояние Git на конец сессии
 
-Ветка `main`, синхронизирована с `origin/main`.
-Последний коммит: **`1c026b3`** — *Add v2 dashboard: skeleton, channels module, and product docs*
+Ветка `main`, синхронизирована с `origin/main` (обе на `011373f`).
+Последний коммит: **`011373f`** — *Add links module to v2 dashboard*.
 
-### ⚠️ Не закоммичено — модуль Links целиком
+### Три сессии подряд поверх одного и того же коммита: анализ → backend → frontend Reports
 
-**Изменённые файлы (2):**
+Ничего не закоммичено ни за одну из них — команда не выполнялась, потому что её не запрашивали.
 
-```
-M  apps/web/src/app/v2/actions.ts        +160   пять server actions для ссылок и кампаний
-M  apps/web/src/app/v2/links/page.tsx    +190/-62   заглушка заменена на рабочую страницу
-```
-
-**Новые файлы (14):**
+**Изменённые файлы (11):**
 
 ```
-?? apps/web/src/app/v2/links/loading.tsx
-?? apps/web/src/components/v2/links/link-kind.ts        чистая логика типов
-?? apps/web/src/components/v2/links/LinkBuilder.tsx     конструктор
-?? apps/web/src/components/v2/links/LinkList.tsx
-?? apps/web/src/components/v2/links/LinkRow.tsx
-?? apps/web/src/components/v2/links/CopyButton.tsx
-?? docs/new-dashboard/v2-links-plan.md
-?? docs/new-dashboard/v2-links-implementation.md
-?? docs/new-dashboard/V2_LINKS_REVIEW.md
-?? docs/new-dashboard/screenshots/lk-*.png              6 файлів
+M  apps/api/package.json                           новый скрипт qa:smoke-reports
+M  apps/api/src/attribution/attribution.service.ts  getAttributionStats(channelId/from/to)
+M  apps/api/src/dashboard/dashboard.controller.ts   from/to/channelId в 5 роутах
+M  apps/api/src/dashboard/dashboard.service.ts      багфикс + фильтры + reach
+M  packages/shared/src/kyiv-time.ts                 kyivDateRange()
+M  packages/shared/src/__tests__/kyiv-time.test.ts  8 новых тестов
+M  apps/web/src/lib/api.ts                          CampaignReportRow, TrackingLinkReportRow, reached/reachRate
+M  apps/web/src/lib/labels.ts                        formatPercentUk()
+M  apps/web/src/app/v2/reports/page.tsx             заглушка заменена на рабочую страницу
+M  docs/new-dashboard/screenshots/v2-reports.png     старый скриншот-заглушка заменён на реальный
+M  docs/new-dashboard/SESSION_CHECKPOINT.md          этот файл
 ```
 
-Плюс этот файл — `docs/new-dashboard/SESSION_CHECKPOINT.md`.
+**Новые файлы (13, из них 4 — документы):**
 
-Итого: **2 изменённых + 15 новых**. Backend, Prisma и старый кабинет в изменениях отсутствуют.
+```
+?? apps/api/scripts/qa/smoke-reports.ts                  живой QA-скрипт против реального Postgres
+?? apps/api/src/dashboard/dashboard.service.spec.ts       15 мок-тестов
+?? apps/api/src/attribution/attribution.service.spec.ts   4 мок-теста
+?? apps/web/src/app/v2/reports/loading.tsx
+?? apps/web/src/components/v2/reports/period.ts
+?? apps/web/src/components/v2/reports/ReportFilters.tsx
+?? apps/web/src/components/v2/reports/KpiRow.tsx
+?? apps/web/src/components/v2/reports/SourcesTable.tsx
+?? apps/web/src/components/v2/reports/LinksTable.tsx
+?? docs/new-dashboard/v2-reports-plan.md
+?? docs/new-dashboard/v2-reports-backend-review.md
+?? docs/new-dashboard/v2-reports-ui-plan.md
+?? docs/new-dashboard/V2_REPORTS_UI_REVIEW.md
+```
 
-Работа проверена и готова к коммиту — команда не выполнялась, потому что её не запрашивали.
+Backend, frontend и старый кабинет иначе не менялись — Prisma-схема, `/l/:slug`, `/r/:slug`, `POST /telegram/webhook`, весь старый кабинет не трогались.
+
+Проверено перед завершением: `pnpm --filter @cleartg/shared test` (81/81), `pnpm --filter @cleartg/api test` (23/23), `pnpm --filter @cleartg/api build` и `pnpm --filter @cleartg/web build` (оба exit 0, 39/39 страниц), `pnpm --filter @cleartg/api qa:smoke-reports` (10/10), живой браузерный прогон через staging-логин — 31/31 страница 200, 0 ошибок консоли. Все временные рабочие пространства и каналы, созданные для проверки, удалены после неё.
+
+Готово к коммиту — команда не выполнялась, потому что её не запрашивали.
 
 ---
 
-**Дата:** 2026-09-10
-**Последний реализованный модуль:** `/v2/links` (Посилання)
-**Следующий модуль:** `/v2/reports` (Звіти)
-**Текущий статус:** MVP 3 из 5 разделов готовы · изменения модуля Links не закоммичены · DATA TRUST CHECK не закрыт
+**Дата:** 2026-09-11
+**Последний реализованный модуль:** `/v2/reports` (Звіти) — backend и frontend готовы, не закоммичено
+**Следующий модуль:** `/v2/subscribers` (Учасники) или полноценный Огляд (S1-21) — оба дешевле, чем были бы без Reports; выбор за следующей сессией или владельцем
+**Текущий статус:** MVP 3 из 5 разделов полностью готовы · рабочее дерево не закоммичено (11 изменённых + 9 новых кодовых файлов + 4 новых документа) · DATA TRUST CHECK частично закрыт (reach подтверждён; staging/prod-проверка и живой resubscribe — всё ещё нет) · конфликт по экспорту ждёт решения владельца

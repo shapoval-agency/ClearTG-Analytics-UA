@@ -9,6 +9,11 @@ export function attributionTypeLabel(type: string): string {
   return map[type] ?? type;
 }
 
+/** 0.42 → «42%». Для конверсій/reachRate з бекенду — вони вже 0..1, зайвого округлення в UI не робимо. */
+export function formatPercentUk(ratio: number): string {
+  return `${Math.round(ratio * 100)}%`;
+}
+
 export function confidenceLabelUk(score: number): string {
   if (score >= 0.95) return 'точно';
   if (score >= 0.75) return 'висока';
