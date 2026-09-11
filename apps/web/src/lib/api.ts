@@ -95,6 +95,82 @@ export interface TrackingLinkReportRow {
   autoRedirect: boolean;
 }
 
+/** GET /api/dashboard/subscribers — рядок списку «Учасники». */
+export interface SubscriberFeedRow {
+  id: string;
+  subscribedAt: string;
+  channelTitle: string;
+  telegramUserId: string;
+  telegramUsername: string | null;
+  isActive: boolean;
+  joinSource: string;
+  attributionType: string;
+  campaignName: string | null;
+  trackingLinkSlug: string | null;
+  trackingLinkName: string | null;
+  confidenceScore: number;
+  utmSource: string | null;
+  utmCampaign: string | null;
+}
+
+/** GET /api/dashboard/subscribers/:id — картка учасника. */
+export interface SubscriberDossier {
+  id: string;
+  telegramUserId: string;
+  telegramUsername: string | null;
+  channel: { id: string; title: string; username: string | null };
+  subscribedAt: string;
+  isActive: boolean;
+  daysInChannel: number;
+  retainedD1: boolean | null;
+  retainedD7: boolean | null;
+  retainedD30: boolean | null;
+  botStarted: boolean;
+  botOptedOut: boolean;
+  attribution: {
+    type: string;
+    confidence: number;
+    reason: string;
+    campaign: string | null;
+    trackingLink: string | null;
+    utm: {
+      source: string | null;
+      medium: string | null;
+      campaign: string | null;
+      content: string | null;
+      term: string | null;
+    };
+    creativeTag: string | null;
+    postNumber: number | null;
+    clickedAt: string | null;
+    telegramOpenedAt: string | null;
+  } | null;
+  unsubscribes: Array<{
+    id: string;
+    occurredAt: string;
+    telegramUsername: string | null;
+  }>;
+  leadMagnets: Array<{ name: string; slug: string; claimedAt: string }>;
+  conversions: Array<{ eventName: string; eventTime: string; status: string }>;
+}
+
+/** GET /api/dashboard/unsubscribes. */
+export interface UnsubscribeFeedRow {
+  id: string;
+  occurredAt: string;
+  channelTitle: string;
+  telegramUserId: string;
+  telegramUsername: string | null;
+  subscribedAt: string | null;
+  hasSubscriberProfile: boolean;
+  attributionType: string | null;
+  campaignName: string | null;
+  trackingLinkSlug: string | null;
+  trackingLinkName: string | null;
+  utmSource: string | null;
+  utmCampaign: string | null;
+}
+
 export interface AuthMe {
   user: { id: string; email: string; name: string | null };
   isAgencyAdmin?: boolean;
