@@ -49,7 +49,7 @@ export function ConnectChannelPanel({
   );
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5">
+    <div className="rounded-[18px] border border-[#dbe4f0] bg-white p-4 shadow-[0_10px_34px_rgba(20,52,110,0.055)] sm:p-5">
       {variant === 'empty' ? (
         <>
           <h2 className="font-semibold text-slate-900">Підключіть перший канал</h2>
@@ -65,7 +65,7 @@ export function ConnectChannelPanel({
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="text-sm font-medium text-slate-700 hover:text-brand-700"
+            className="text-sm font-bold text-[#102044] hover:text-brand-700"
             aria-expanded={open}
           >
             {open ? '− ' : '+ '}Підключити ще один канал
@@ -93,12 +93,12 @@ export function ConnectChannelPanel({
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               placeholder="@mychannel або -100…"
-              className="flex-1 min-w-[220px] rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              className="min-w-[220px] flex-1 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm"
             />
             <button
               type="submit"
               disabled={pending || !identifier.trim()}
-              className="rounded-lg bg-brand-600 px-4 py-2 text-sm text-white hover:bg-brand-700 disabled:opacity-50"
+              className="min-h-11 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-brand-700 disabled:opacity-50"
             >
               {pending ? 'Перевіряємо…' : 'Підключити'}
             </button>

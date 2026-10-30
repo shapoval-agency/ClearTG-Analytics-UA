@@ -28,7 +28,7 @@ export function CopyButton({
     <button
       type="button"
       onClick={copy}
-      className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+      className="min-h-10 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:border-brand-200 hover:bg-brand-50"
     >
       {copied ? 'Скопійовано' : label}
     </button>

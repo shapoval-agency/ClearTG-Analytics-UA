@@ -1,46 +1,31 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
+import {
+  ChartBar,
+  LinkSimple,
+  SignOut,
+  SquaresFour,
+  TelegramLogo,
+  UsersThree,
+} from '@phosphor-icons/react';
 import { logoutAction } from '@/lib/actions';
 import { WorkspacePicker } from '@/components/v2/WorkspacePicker';
 import type { AuthMe } from '@/lib/api';
 
-/**
- * Оболонка нового кабінету.
- *
- * П'ять розділів замість дев'ятнадцяти пунктів старого меню. Правило з ТЗ:
- * функція живе поруч зі зрозумілою користувачу сутністю, а не отримує
- * власний пункт меню. Кампанії — властивість посилання і розріз у звітах,
- * тому окремого розділу не мають.
- */
 const NAV = [
-  { href: '/v2', label: 'Огляд', hint: 'Що сталося і чи є проблема' },
-  { href: '/v2/channels', label: 'Канали', hint: 'Підключення і стан' },
-  { href: '/v2/links', label: 'Посилання', hint: 'Створення і мітки' },
-  { href: '/v2/reports', label: 'Звіти', hint: 'Джерела і наскільки їм довіряти' },
-  { href: '/v2/subscribers', label: 'Учасники', hint: 'Люди і їх джерело' },
+  { href: '/v2', label: 'Огляд', icon: SquaresFour },
+  { href: '/v2/channels', label: 'Канали', icon: TelegramLogo },
+  { href: '/v2/links', label: 'Посилання', icon: LinkSimple },
+  { href: '/v2/reports', label: 'Звіти', icon: ChartBar },
+  { href: '/v2/subscribers', label: 'Учасники', icon: UsersThree },
 ];
 
 function isActive(pathname: string, href: string) {
-  // '/v2' активний лише на самому огляді, інакше він підсвічувався б завжди.
   if (href === '/v2') return pathname === '/v2';
-  return pathname === href || pathname.startsWith(href + '/');
-}
-
-function MenuIcon({ open }: { open: boolean }) {
-  // Один SVG замість бібліотеки іконок — у проєкті її й так ніде не було.
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-      {open ? (
-        <path d="M6 6l12 12M18 6L6 18" />
-      ) : (
-        <path d="M4 7h16M4 12h16M4 17h16" />
-      )}
-    </svg>
-  );
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function V2Shell({
@@ -53,151 +38,93 @@ export function V2Shell({
   activeWorkspaceId: string | null;
 }) {
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  // Перехід на інший розділ — закрити шухляду, інакше вона лишиться
-  // відкритою поверх нової сторінки (Link не перезавантажує сторінку,
-  // локальний стан V2Shell переживає навігацію).
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
-
-  // Поки шухляда відкрита на телефоні — не давати сторінці під нею скролитись.
-  useEffect(() => {
-    if (!mobileOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [mobileOpen]);
-
-  // Esc закриває шухляду — дешево додати, стандартна поведінка для оверлею.
-  useEffect(() => {
-    if (!mobileOpen) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setMobileOpen(false);
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [mobileOpen]);
 
   return (
-    <div className="flex min-h-screen">
-      {/* Верхня панель — тільки нижче lg (1024px), заміняє собою бічне меню,
-          яке на вузькому екрані займало б увесь простір під контент. */}
-      <div className="lg:hidden fixed inset-x-0 top-0 z-30 flex items-center justify-between gap-3 bg-white border-b border-slate-200 px-4 py-3">
-        <Link href="/v2" className="font-semibold text-lg text-brand-700">
-          ClearTG
-        </Link>
-        <button
-          type="button"
-          onClick={() => setMobileOpen(true)}
-          aria-label="Відкрити меню"
-          aria-expanded={mobileOpen}
-          aria-controls="v2-mobile-nav"
-          className="p-2 -m-2 text-slate-600"
-        >
-          <MenuIcon open={false} />
-        </button>
-      </div>
-
-      {/* Затемнення позаду шухляди — клік закриває, як і Esc. */}
-      {mobileOpen && (
-        <div
-          className="lg:hidden fixed inset-0 z-40 bg-slate-900/40"
-          onClick={() => setMobileOpen(false)}
-          aria-hidden="true"
-        />
-      )}
-
-      <aside
-        id="v2-mobile-nav"
-        className={clsx(
-          'w-64 bg-white border-r border-slate-200 flex flex-col shrink-0',
-          'fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-out',
-          'lg:static lg:translate-x-0',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full',
-        )}
-      >
-        <div className="p-5 border-b border-slate-200 flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <Link href="/v2" className="font-semibold text-lg text-brand-700">
-              ClearTG
-            </Link>
-            {/* Раніше тут було «Новий кабінет» — технічна назва про сам продукт
-                (порівняння зі старим кабінетом), а не про користь для клієнта.
-                CORE_MVP_UX_AUDIT.md, розділ 1, знахідка 1. */}
-            <p className="text-xs text-slate-400 mt-0.5">Звідки приходять підписники</p>
-            {me && (
-              <WorkspacePicker me={me} activeWorkspaceId={activeWorkspaceId} />
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setMobileOpen(false)}
-            aria-label="Закрити меню"
-            className="lg:hidden p-2 -m-2 text-slate-400 shrink-0"
-          >
-            <MenuIcon open={true} />
-          </button>
-        </div>
-
-        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-          {NAV.map((item) => {
-            const active = isActive(pathname, item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                onClick={() => setMobileOpen(false)}
-                className={clsx(
-                  'block px-3 py-2 rounded-lg transition-colors',
-                  active
-                    ? 'bg-brand-50 text-brand-700'
-                    : 'text-slate-600 hover:bg-slate-50',
-                )}
-              >
-                <span
-                  className={clsx('block text-sm', active && 'font-medium')}
-                >
-                  {item.label}
-                </span>
-                <span className="block text-xs text-slate-400 mt-0.5">
-                  {item.hint}
-                </span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="p-4 border-t border-slate-200 space-y-3">
-          <Link
-            href="/dashboard"
-            className="block text-xs text-slate-500 hover:text-brand-600"
-          >
-            ← Повернутися в старий кабінет
+    <div className="v2-shell min-h-screen bg-[#f4f7fb] text-[#102044]">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#073aa8] text-white shadow-[0_8px_30px_rgba(4,34,99,0.18)]">
+        <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-5 px-4 sm:px-6 lg:h-[72px] lg:px-8">
+          <Link href="/v2" className="shrink-0 text-xl font-extrabold tracking-[-0.04em] sm:text-2xl">
+            Clear<span className="text-[#63a3ff]">TG</span>
           </Link>
-          {me?.user.email && (
-            <p className="text-xs text-slate-500 truncate" title={me.user.email}>
-              {me.user.email}
-            </p>
-          )}
-          <form action={logoutAction}>
-            <button
-              type="submit"
-              className="text-xs text-slate-600 hover:text-red-600"
-            >
-              Вийти
-            </button>
-          </form>
-        </div>
-      </aside>
 
-      <main className="flex-1 min-w-0 p-4 pt-20 sm:p-6 sm:pt-20 lg:p-8 overflow-auto">
+          {me && (
+            <div className="hidden min-w-0 lg:block lg:w-[230px]">
+              <WorkspacePicker me={me} activeWorkspaceId={activeWorkspaceId} onDark />
+            </div>
+          )}
+
+          <nav className="hidden h-full flex-1 items-center justify-center gap-1 lg:flex" aria-label="Основна навігація">
+            {NAV.map((item) => {
+              const active = isActive(pathname, item.href);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={clsx(
+                    'relative flex h-full items-center gap-2 px-4 text-sm font-semibold transition-colors',
+                    active ? 'text-white' : 'text-blue-100/80 hover:text-white',
+                  )}
+                >
+                  <Icon size={18} weight={active ? 'fill' : 'regular'} aria-hidden="true" />
+                  {item.label}
+                  {active && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-[#63a3ff]" />}
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="ml-auto flex min-w-0 items-center gap-3">
+            {me?.user.email && (
+              <div className="hidden items-center gap-2 xl:flex">
+                <span className="grid size-9 place-items-center rounded-full bg-white/15 text-sm font-bold ring-1 ring-white/20">
+                  {me.user.email.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="max-w-48 truncate text-sm text-blue-50">{me.user.email}</span>
+              </div>
+            )}
+            <form action={logoutAction} className="hidden lg:block">
+              <button
+                type="submit"
+                aria-label="Вийти"
+                title="Вийти"
+                className="grid size-9 place-items-center rounded-lg text-blue-100/80 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              >
+                <SignOut size={20} aria-hidden="true" />
+              </button>
+            </form>
+          </div>
+        </div>
+      </header>
+
+      <main className="v2-main min-w-0 overflow-x-hidden px-4 pb-28 sm:px-6 lg:px-8 lg:pb-10">
         {children}
       </main>
+
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-slate-200/80 bg-white/95 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-10px_30px_rgba(15,35,75,0.10)] backdrop-blur lg:hidden"
+        aria-label="Мобільна навігація"
+      >
+        {NAV.map((item) => {
+          const active = isActive(pathname, item.href);
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              className={clsx(
+                'flex min-w-0 flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-semibold transition',
+                active ? 'bg-brand-50 text-brand-700' : 'text-slate-500 active:bg-slate-100',
+              )}
+            >
+              <Icon size={21} weight={active ? 'fill' : 'regular'} aria-hidden="true" />
+              <span className="truncate">{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }

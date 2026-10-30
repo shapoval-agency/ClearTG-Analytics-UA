@@ -42,11 +42,11 @@ export function ReportFilters({
   }
 
   return (
-    <div className={clsx('flex flex-wrap items-center gap-3 mb-6', pending && 'opacity-60')}>
+    <div className={clsx('mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center', pending && 'opacity-60')}>
       <div
         role="group"
         aria-label="Період"
-        className="inline-flex rounded-lg border border-slate-200 bg-white p-1"
+        className="flex max-w-full overflow-x-auto rounded-xl border border-[#dbe4f0] bg-white p-1 shadow-sm"
       >
         {PERIOD_OPTIONS.map((opt) => (
           <button
@@ -56,7 +56,7 @@ export function ReportFilters({
             aria-pressed={opt.value === period}
             onClick={() => navigate({ period: opt.value, channelId })}
             className={clsx(
-              'px-3 py-1.5 text-sm rounded-md transition-colors',
+              'min-h-10 flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold transition-colors sm:flex-none',
               opt.value === period
                 ? 'bg-brand-600 text-white'
                 : 'text-slate-600 hover:bg-slate-50',
@@ -68,7 +68,7 @@ export function ReportFilters({
       </div>
 
       {channels.length > 1 && (
-        <div>
+        <div className="sm:ml-auto">
           <label className="sr-only" htmlFor="v2-reports-channel">
             Канал
           </label>
@@ -77,7 +77,7 @@ export function ReportFilters({
             disabled={pending}
             value={channelId ?? ''}
             onChange={(e) => navigate({ period, channelId: e.target.value || undefined })}
-            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white text-slate-700"
+            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 sm:w-auto"
           >
             <option value="">Усі канали</option>
             {channels.map((c) => (

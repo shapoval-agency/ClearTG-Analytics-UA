@@ -129,7 +129,7 @@ export function ChannelActions({
                 type="button"
                 disabled={pending}
                 onClick={runCheck}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="min-h-10 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:border-brand-200 hover:bg-brand-50 disabled:opacity-50"
               >
                 {pending ? 'Перевіряємо…' : 'Перевірити'}
               </button>
@@ -137,7 +137,7 @@ export function ChannelActions({
                 type="button"
                 disabled={pending}
                 onClick={() => setConfirming(true)}
-                className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-50"
+                className="min-h-10 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 disabled:opacity-50"
               >
                 Архівувати
               </button>
@@ -147,7 +147,7 @@ export function ChannelActions({
               type="button"
               disabled={pending}
               onClick={() => setActive(true)}
-              className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm text-white hover:bg-brand-700 disabled:opacity-50"
+              className="min-h-10 rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-brand-700 disabled:opacity-50"
             >
               {pending ? 'Відновлюємо…' : 'Відновити збір'}
             </button>

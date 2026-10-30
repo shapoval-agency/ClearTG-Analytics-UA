@@ -126,8 +126,8 @@ export default async function V2LinksPage() {
     <>
       {header}
       <LinkList rows={rows} />
-      <details className="bg-white rounded-xl border border-slate-200 p-5">
-        <summary className="cursor-pointer text-sm font-medium text-slate-700 hover:text-brand-700">
+      <details className="rounded-[18px] border border-[#dbe4f0] bg-white p-4 shadow-[0_10px_34px_rgba(20,52,110,0.055)] sm:p-5">
+        <summary className="cursor-pointer text-sm font-bold text-[#102044] hover:text-brand-700">
           + Створити посилання
         </summary>
         <div className="mt-4">

@@ -9,7 +9,7 @@ export function LinkList({ rows }: { rows: LinkRowData[] }) {
   return (
     <>
       {active.length > 0 && (
-        <div className="grid gap-4 mb-6">
+        <div className="mb-6 grid gap-4 xl:grid-cols-2">
           {active.map((row) => (
             <LinkRow key={`${row.kind}-${row.id}`} row={row} />
           ))}
@@ -21,7 +21,7 @@ export function LinkList({ rows }: { rows: LinkRowData[] }) {
           <h2 className="text-sm font-medium text-slate-500 mb-3">
             Архівні та відкликані ({inactive.length})
           </h2>
-          <div className="grid gap-4">
+          <div className="grid gap-4 xl:grid-cols-2">
             {inactive.map((row) => (
               <LinkRow key={`${row.kind}-${row.id}`} row={row} />
             ))}

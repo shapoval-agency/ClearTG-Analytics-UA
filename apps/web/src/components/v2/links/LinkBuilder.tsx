@@ -201,11 +201,11 @@ export function LinkBuilder({
   // Звичайне t.me нічого не створює — показуємо готову адресу і чесне попередження.
   const plainUrl = channel?.username ? `https://t.me/${channel.username}` : null;
 
-  const field = 'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm';
-  const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
+  const field = 'w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm';
+  const labelCls = 'mb-1.5 block text-sm font-bold text-[#102044]';
 
   return (
-    <form onSubmit={submit} className="bg-white rounded-xl border border-slate-200 p-5">
+    <form onSubmit={submit} className="rounded-[18px] border border-[#dbe4f0] bg-white p-4 shadow-[0_10px_34px_rgba(20,52,110,0.055)] sm:p-6">
       {/* 1. Канал — пропускаємо питання, якщо канал один */}
       {channels.length > 1 && (
         <div className="mb-4">
@@ -330,7 +330,7 @@ export function LinkBuilder({
           {options.map((option) => (
             <label
               key={option.kind}
-              className={`block rounded-lg border p-3 ${
+              className={`block rounded-xl border p-3.5 transition ${
                 option.available
                   ? kind === option.kind
                     ? 'border-brand-500 bg-brand-50 cursor-pointer'
@@ -471,7 +471,7 @@ export function LinkBuilder({
         <button
           type="submit"
           disabled={pending}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm text-white hover:bg-brand-700 disabled:opacity-50"
+          className="min-h-11 w-full rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white shadow-[0_8px_20px_rgba(37,99,235,0.20)] transition hover:bg-brand-700 disabled:opacity-50 sm:w-auto"
         >
           {pending ? 'Створюємо…' : 'Створити посилання'}
         </button>

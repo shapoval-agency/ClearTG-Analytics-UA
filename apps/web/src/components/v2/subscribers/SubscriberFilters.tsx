@@ -39,13 +39,13 @@ export function SubscriberFilters({
   }
 
   return (
-    <div className={clsx('flex flex-wrap items-center gap-3 mb-6', pending && 'opacity-60')}>
+    <div className={clsx('mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center', pending && 'opacity-60')}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
           navigate({ search: query.trim() || undefined, status });
         }}
-        className="flex items-center gap-2"
+        className="flex w-full items-center gap-2 sm:w-auto"
       >
         <label className="sr-only" htmlFor="v2-subscribers-search">
           Пошук за ім&apos;ям або Telegram ID
@@ -57,18 +57,18 @@ export function SubscriberFilters({
           disabled={pending}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Ім'я або Telegram ID…"
-          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 w-56 bg-white"
+          className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm sm:w-64"
         />
         <button
           type="submit"
           disabled={pending}
-          className="text-sm px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+          className="min-h-10 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
         >
           Знайти
         </button>
       </form>
 
-      <div role="group" aria-label="Статус" className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+      <div role="group" aria-label="Статус" className="flex rounded-xl border border-slate-200 bg-white p-1 sm:inline-flex">
         {STATUS_OPTIONS.map((opt) => {
           const active = opt.value === status;
           return (
@@ -79,7 +79,7 @@ export function SubscriberFilters({
               aria-pressed={active}
               onClick={() => navigate({ search, status: opt.value })}
               className={clsx(
-                'px-3 py-1.5 text-sm rounded-md transition-colors',
+                'min-h-10 flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors sm:flex-none',
                 active ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-50',
               )}
             >

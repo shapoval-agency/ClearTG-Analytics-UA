@@ -15,9 +15,11 @@ import type { AuthMe } from '@/lib/api';
 export function WorkspacePicker({
   me,
   activeWorkspaceId,
+  onDark = false,
 }: {
   me: AuthMe;
   activeWorkspaceId: string | null;
+  onDark?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -25,15 +27,15 @@ export function WorkspacePicker({
     const ws = me.workspaces[0];
     if (!ws) return null;
     return (
-      <p className="text-xs text-slate-500 mt-2 truncate" title={ws.name}>
+      <p className={onDark ? 'truncate text-sm font-medium text-white' : 'truncate text-xs text-slate-500'} title={ws.name}>
         {ws.name}
-        <span className="text-slate-400"> · {ws.role}</span>
+        <span className={onDark ? 'ml-2 text-[10px] font-bold uppercase tracking-wide text-blue-200' : 'text-slate-400'}> · {ws.role}</span>
       </p>
     );
   }
 
   return (
-    <div className="mt-2">
+    <div>
       <label className="sr-only" htmlFor="v2-workspace-picker">
         Кабінет клієнта
       </label>
@@ -47,7 +49,9 @@ export function WorkspacePicker({
             startTransition(() => switchWorkspaceV2Action(id));
           }
         }}
-        className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 text-slate-700"
+        className={onDark
+          ? 'w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-medium text-white outline-none transition focus:border-white/30 focus:ring-2 focus:ring-white/20'
+          : 'w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700'}
       >
         {me.workspaces.map((ws) => (
           <option key={ws.id} value={ws.id}>

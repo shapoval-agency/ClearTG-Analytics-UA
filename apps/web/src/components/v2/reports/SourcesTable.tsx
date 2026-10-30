@@ -45,10 +45,10 @@ export function SourcesTable({
 
   return (
     <Card title="Джерела" hint="Що приводить підписників, а що просто витрачає бюджет">
-      <div className="overflow-x-auto -mx-5">
+      <div className="-mx-4 overflow-x-auto sm:-mx-5">
         <table className="w-full text-sm min-w-[720px]">
           <thead>
-            <tr className="text-left text-slate-500 border-b border-slate-100">
+            <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-xs text-slate-500">
               <th className="font-medium py-2 px-5">Кампанія</th>
               <th className="font-medium py-2 px-3 text-right">Кліки</th>
               <th className="font-medium py-2 px-3 text-right">Підписки</th>
@@ -60,7 +60,7 @@ export function SourcesTable({
           </thead>
           <tbody>
             {sorted.map((row) => (
-              <tr key={row.id} className="border-b border-slate-50 last:border-0">
+              <tr key={row.id} className="border-b border-slate-100 last:border-0 hover:bg-brand-50/40">
                 <td className="py-2.5 px-5">
                   <p className="font-medium text-slate-900">{row.name}</p>
                   <p className="text-xs text-slate-400">{row.channelTitle}</p>

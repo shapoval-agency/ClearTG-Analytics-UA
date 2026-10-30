@@ -15,7 +15,7 @@ export function OverviewKpiRow({ overview }: { overview: DashboardOverview }) {
 
   return (
     <div className="mb-6">
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[18px] border border-[#dbe4f0] bg-[#dbe4f0] shadow-[0_10px_34px_rgba(20,52,110,0.055)] [&>*:last-child]:col-span-2 lg:grid-cols-5 lg:[&>*:last-child]:col-span-1">
         <StatCard label="Кліки" value={overview.clicks} />
         <StatCard label="Підписки" value={overview.subscribers} />
         <StatCard label="Відписки" value={overview.unsubscribes} />
@@ -27,8 +27,8 @@ export function OverviewKpiRow({ overview }: { overview: DashboardOverview }) {
       </div>
 
       {overview.subscribers > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-sm mt-3">
-          <span className="text-slate-500">Баланс подій:</span>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+          <span className="font-medium text-slate-500">Баланс подій</span>
           {overview.dataIntegrity.ok ? (
             <Badge tone="ok">сходиться</Badge>
           ) : overview.dataIntegrity.extra > 0 ? (
@@ -37,7 +37,7 @@ export function OverviewKpiRow({ overview }: { overview: DashboardOverview }) {
             <Badge tone="error">{overview.dataIntegrity.missing} підписок без визначеного джерела</Badge>
           )}
           {!overview.dataIntegrity.ok && (
-            <Link href="/v2/subscribers" className="text-xs text-brand-600 hover:underline">
+            <Link href="/v2/subscribers" className="text-xs font-semibold text-brand-600 hover:text-brand-700">
               Перевірити учасників
             </Link>
           )}

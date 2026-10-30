@@ -56,7 +56,7 @@ export default async function V2ReportsPage({
       <a
         href={`/api/dashboard/reports/export.csv${query}`}
         download
-        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+        className="inline-flex min-h-11 items-center rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-white/15"
       >
         Експорт CSV
       </a>

@@ -106,7 +106,7 @@ export default async function V2ChannelsPage() {
       )}
 
       {active.length > 0 && (
-        <div className="grid gap-4 mb-6">
+        <div className="mb-6 grid gap-4 xl:grid-cols-2">
           {active.map((channel) => (
             <ChannelCard key={channel.id} channel={channel} />
           ))}
@@ -115,10 +115,10 @@ export default async function V2ChannelsPage() {
 
       {archived.length > 0 && (
         <section className="mb-6">
-          <h2 className="text-sm font-medium text-slate-500 mb-3">
+          <h2 className="mb-3 text-sm font-bold text-slate-500">
             Архівні канали ({archived.length})
           </h2>
-          <div className="grid gap-4">
+          <div className="grid gap-4 xl:grid-cols-2">
             {archived.map((channel) => (
               <ChannelCard key={channel.id} channel={channel} />
             ))}

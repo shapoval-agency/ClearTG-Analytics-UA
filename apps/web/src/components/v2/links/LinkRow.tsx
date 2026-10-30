@@ -39,10 +39,10 @@ export function LinkRow({ row }: { row: LinkRowData }) {
   }
 
   return (
-    <article className="bg-white rounded-xl border border-slate-200 p-5">
+    <article className="rounded-[18px] border border-[#dbe4f0] bg-white p-4 shadow-[0_10px_34px_rgba(20,52,110,0.055)] sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="font-medium text-slate-900">{row.name}</h3>
+          <h3 className="font-bold text-[#102044]">{row.name}</h3>
           <p className="text-sm text-slate-500 mt-0.5">
             {row.channelTitle}
             {row.source && ` · ${trafficSourceLabel(row.source)}`}
@@ -55,15 +55,15 @@ export function LinkRow({ row }: { row: LinkRowData }) {
         </div>
       </div>
 
-      <p className="font-mono text-sm text-brand-700 break-all mt-3">{row.url}</p>
+      <p className="mt-4 break-all rounded-xl bg-brand-50 px-3 py-2.5 font-mono text-xs font-semibold text-brand-700 sm:text-sm">{row.url}</p>
 
       {row.marks.length > 0 && (
-        <p className="text-sm text-slate-500 mt-2">{row.marks.join(' · ')}</p>
+        <p className="mt-2 text-xs leading-5 text-slate-500">{row.marks.join(' · ')}</p>
       )}
 
       {row.embedScript && (
-        <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <summary className="cursor-pointer text-sm font-medium text-slate-700">
+        <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <summary className="cursor-pointer text-sm font-bold text-slate-700">
             Код для сайту
           </summary>
           <p className="mt-2 text-xs text-slate-500">

@@ -5,3 +5,55 @@
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
+
+.v2-shell {
+  font-family: 'Manrope Variable', Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-feature-settings: 'ss01' 1, 'tnum' 1;
+}
+
+.v2-main > :not(.v2-page-header) {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 1536px;
+}
+
+.v2-shell :where(button, a, input, select, summary) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.v2-shell :where(button, a, input, select, summary):focus-visible {
+  outline: 2px solid #63a3ff;
+  outline-offset: 2px;
+}
+
+.v2-shell :where(input, select) {
+  min-height: 42px;
+  border-color: #d8e1ee;
+  background-color: #fff;
+  color: #102044;
+  box-shadow: 0 1px 2px rgba(16, 32, 68, 0.03);
+}
+
+.v2-shell :where(input, select)::placeholder {
+  color: #94a3b8;
+}
+
+.v2-shell table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.v2-shell tbody tr {
+  transition: background-color 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2-shell *,
+  .v2-shell *::before,
+  .v2-shell *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

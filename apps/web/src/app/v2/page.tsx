@@ -3,7 +3,6 @@ import {
   api,
   AuthError,
   type DashboardOverview,
-  type CampaignReportRow,
   type SubscriberFeedRow,
   type UnsubscribeFeedRow,
 } from '@/lib/api';
@@ -15,7 +14,6 @@ import { resolvePeriod } from '@/components/v2/reports/period';
 import { OnboardingChecklist, type OnboardingStep } from '@/components/v2/overview/OnboardingChecklist';
 import { OverviewKpiRow } from '@/components/v2/overview/OverviewKpiRow';
 import { ActiveChannelsBlock } from '@/components/v2/overview/ActiveChannelsBlock';
-import { TopSources } from '@/components/v2/overview/TopSources';
 import { RecentActivity, type ActivityItem } from '@/components/v2/overview/RecentActivity';
 import { AttributionQuality } from '@/components/v2/reports/AttributionQuality';
 
@@ -57,8 +55,8 @@ function buildActivity(subs: SubscriberFeedRow[], unsubs: UnsubscribeFeedRow[]):
  *
  * Не аналітична система: 10 секунд на відповідь «чи є проблема», а не
  * повний розбір (для нього — «Звіти» й «Учасники»). Дані й фільтри — ті
- * самі три вже готові API, що й у «Звітах» (getOverview/getCampaignReports з
- * from/to/channelId), плюс короткі зрізи getSubscriberFeed/getUnsubscribeFeed
+ * самі фільтри, що й у «Звітах» (getOverview з from/to/channelId), плюс
+ * короткі зрізи getSubscriberFeed/getUnsubscribeFeed
  * для блоку активності. Жодного нового backend-виклику.
  */
 export default async function V2OverviewPage({
@@ -73,13 +71,19 @@ export default async function V2OverviewPage({
   const header = (
     <PageHeader
       title="Огляд"
-      description="Що відбувається з вашими каналами й рекламою зараз."
-    />
+      description="Ваші Telegram-канали та аналітика — один короткий стан без зайвого шуму."
+    >
+      <Link
+        href="/v2/links"
+        className="inline-flex min-h-11 items-center rounded-xl bg-[#2080ff] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_24px_rgba(0,94,255,0.28)] transition hover:bg-[#3b8fff]"
+      >
+        + Нове посилання
+      </Link>
+    </PageHeader>
   );
 
   let channels: ChannelListItem[] = [];
   let overview: DashboardOverview | null = null;
-  let campaigns: CampaignReportRow[] = [];
   let recentSubs: SubscriberFeedRow[] = [];
   let recentUnsubs: UnsubscribeFeedRow[] = [];
   let trackingLinks: TrackingLinkApi[] = [];
@@ -88,10 +92,9 @@ export default async function V2OverviewPage({
   let sessionExpired = false;
 
   try {
-    [channels, overview, campaigns, recentSubs, recentUnsubs, trackingLinks, inviteLinks] = await Promise.all([
+    [channels, overview, recentSubs, recentUnsubs, trackingLinks, inviteLinks] = await Promise.all([
       api<ChannelListItem[]>('/api/channels'),
       api<DashboardOverview>(`/api/dashboard/overview${query}`),
-      api<CampaignReportRow[]>(`/api/dashboard/campaigns${query}`),
       api<SubscriberFeedRow[]>(`/api/dashboard/subscribers${buildQuery({ channelId, limit: '5' })}`),
       api<UnsubscribeFeedRow[]>(`/api/dashboard/unsubscribes${buildQuery({ channelId, limit: '5' })}`),
       api<TrackingLinkApi[]>('/api/tracking-links'),
@@ -181,12 +184,9 @@ export default async function V2OverviewPage({
       ) : (
         <>
           <OverviewKpiRow overview={overview} />
-          <div className="mb-6">
-            <AttributionQuality overview={overview} compact />
-          </div>
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.85fr)]">
             <ActiveChannelsBlock channels={channels} />
-            <TopSources rows={campaigns} />
+            <AttributionQuality overview={overview} compact />
             <div className="lg:col-span-2">
               <RecentActivity items={buildActivity(recentSubs, recentUnsubs)} />
             </div>

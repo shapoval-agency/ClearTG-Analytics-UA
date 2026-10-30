@@ -21,14 +21,17 @@ export function PageHeader({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-      <div className="min-w-0">
-        <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
-        {description && (
-          <p className="text-slate-500 mt-1 max-w-2xl">{description}</p>
-        )}
+    <div className="v2-page-header -mx-4 mb-6 bg-[#073aa8] px-4 pb-7 pt-6 text-white sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 lg:pb-9 lg:pt-8">
+      <div className="mx-auto flex max-w-[1536px] flex-wrap items-end justify-between gap-5">
+        <div className="min-w-0">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-blue-200">ClearTG Analytics</p>
+          <h1 className="text-3xl font-extrabold tracking-[-0.035em] text-white sm:text-4xl lg:text-[42px] lg:leading-none">{title}</h1>
+          {description && (
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100 sm:text-base">{description}</p>
+          )}
+        </div>
+        {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
       </div>
-      {children}
     </div>
   );
 }
@@ -47,14 +50,14 @@ export function Card({
   return (
     <section
       className={clsx(
-        'bg-white rounded-xl border border-slate-200 p-5',
+        'bg-white rounded-[18px] border border-[#dbe4f0] p-4 shadow-[0_10px_34px_rgba(20,52,110,0.055)] sm:p-5',
         className,
       )}
     >
       {title && (
         <header className="mb-4">
-          <h2 className="font-semibold text-slate-900">{title}</h2>
-          {hint && <p className="text-xs text-slate-500 mt-0.5">{hint}</p>}
+          <h2 className="text-base font-bold tracking-[-0.01em] text-[#102044] sm:text-lg">{title}</h2>
+          {hint && <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">{hint}</p>}
         </header>
       )}
       {children}
@@ -72,10 +75,10 @@ export function StatCard({
   hint?: string;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5">
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="text-2xl font-semibold mt-1 text-slate-900">{value}</p>
-      {hint && <p className="text-xs text-slate-400 mt-2">{hint}</p>}
+    <div className="min-w-0 bg-white px-4 py-4 sm:px-5">
+      <p className="text-xs font-semibold text-slate-500 sm:text-sm">{label}</p>
+      <p className="mt-1 text-2xl font-extrabold tracking-[-0.035em] text-[#102044] sm:text-3xl">{value}</p>
+      {hint && <p className="mt-2 text-[11px] leading-4 text-slate-400">{hint}</p>}
     </div>
   );
 }
@@ -85,7 +88,7 @@ type Tone = 'ok' | 'warn' | 'error' | 'neutral';
 const TONE_CLASSES: Record<Tone, string> = {
   ok: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   warn: 'bg-amber-50 text-amber-700 border-amber-200',
-  error: 'bg-red-50 text-red-700 border-red-200',
+  error: 'bg-rose-50 text-rose-700 border-rose-200',
   neutral: 'bg-slate-100 text-slate-600 border-slate-200',
 };
 
@@ -99,7 +102,7 @@ export function Badge({
   return (
     <span
       className={clsx(
-        'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium',
+        'inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold leading-none',
         TONE_CLASSES[tone],
       )}
     >
@@ -119,8 +122,8 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="text-center py-10 px-4">
-      <p className="font-medium text-slate-700">{title}</p>
+    <div className="rounded-[18px] border border-dashed border-slate-300 bg-white/70 px-4 py-12 text-center">
+      <p className="font-bold text-[#102044]">{title}</p>
       {description && (
         <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
           {description}
@@ -154,7 +157,7 @@ export function ErrorState({
   detail?: string;
 }) {
   return (
-    <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
       <p className="font-medium text-red-800">{title}</p>
       {description && <p className="text-sm text-red-700 mt-1">{description}</p>}
       {detail && (
@@ -175,7 +178,7 @@ export function DisconnectedState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
       <p className="font-medium text-amber-800">{title}</p>
       {description && (
         <p className="text-sm text-amber-700 mt-1">{description}</p>

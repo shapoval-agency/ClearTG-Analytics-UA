@@ -31,7 +31,7 @@ export function KpiRow({
   const hasClicks = overview.clicks > 0;
 
   return (
-    <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 mb-6">
+    <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-[18px] border border-[#dbe4f0] bg-[#dbe4f0] shadow-[0_10px_34px_rgba(20,52,110,0.055)] lg:grid-cols-3 xl:grid-cols-6">
       <StatCard label="Кліки" value={overview.clicks}
         hint={previous ? countChange(overview.clicks, previous.clicks) : undefined} />
       <StatCard
