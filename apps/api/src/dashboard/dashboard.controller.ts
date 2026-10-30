@@ -61,6 +61,17 @@ export class DashboardController {
   }
 
   @RequiresWorkspace()
+  @Get('unsubscribe-timing')
+  unsubscribeTiming(
+    @WorkspaceId() workspaceId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+  ) {
+    return this.dashboard.getUnsubscribeTiming(workspaceId, { from, to, channelId });
+  }
+
+  @RequiresWorkspace()
   @Get('reports/export.csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
   async exportReports(

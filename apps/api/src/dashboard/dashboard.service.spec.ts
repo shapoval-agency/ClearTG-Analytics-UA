@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildUnknownSourceMonitor, DashboardService } from './dashboard.service';
+import { buildUnknownSourceMonitor, buildUnsubscribeTiming, DashboardService } from './dashboard.service';
 
 /**
  * Юніт-тести на DashboardService — без бази, Prisma підмінена фейками
@@ -250,6 +250,51 @@ describe('DashboardService.getUnsubscribeFeed — фільтр періоду', 
     const where = findMany.mock.calls[0][0].where;
     expect(where.occurredAt.gte).toBeInstanceOf(Date);
     expect(where.occurredAt.lt).toBeInstanceOf(Date);
+  });
+});
+
+describe('DashboardService.getUnsubscribeTiming', () => {
+  it('розкладає відписки на взаємовиключні 1 день / 7 днів / 30 днів / пізніше', () => {
+    const subscribedAt = new Date('2026-01-01T10:00:00.000Z');
+    const after = (days: number, hours = 0) =>
+      new Date(subscribedAt.getTime() + days * 86_400_000 + hours * 3_600_000);
+
+    const result = buildUnsubscribeTiming([
+      { occurredAt: after(0, 12), subscriberProfile: { subscribedAt } },
+      { occurredAt: after(3), subscriberProfile: { subscribedAt } },
+      { occurredAt: after(14), subscriberProfile: { subscribedAt } },
+      { occurredAt: after(45), subscriberProfile: { subscribedAt } },
+      { occurredAt: after(2), subscriberProfile: null },
+    ]);
+
+    expect(result).toEqual({
+      total: 5,
+      knownTotal: 4,
+      unknown: 1,
+      buckets: {
+        day1: { count: 1, share: 0.25 },
+        week: { count: 1, share: 0.25 },
+        month: { count: 1, share: 0.25 },
+        later: { count: 1, share: 0.25 },
+      },
+    });
+  });
+
+  it('передає period/channel у Prisma й повертає агрегат', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { unsubscribeEvent: { findMany } };
+    const service = new DashboardService(prisma as never, {} as never, {} as never);
+
+    const result = await service.getUnsubscribeTiming('ws_1', {
+      channelId: 'ch_1',
+      from: '2026-07-24',
+      to: '2026-07-25',
+    });
+
+    expect(findMany.mock.calls[0][0].where.channelId).toBe('ch_1');
+    expect(findMany.mock.calls[0][0].where.occurredAt.gte).toBeInstanceOf(Date);
+    expect(findMany.mock.calls[0][0].where.occurredAt.lt).toBeInstanceOf(Date);
+    expect(result.total).toBe(0);
   });
 });
 

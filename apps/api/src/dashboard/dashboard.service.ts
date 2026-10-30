@@ -14,6 +14,53 @@ export interface ReportFilterOpts {
 
 type AttributionStat = { type: string; count: number };
 
+type UnsubscribeTimingEvent = {
+  occurredAt: Date;
+  subscriberProfile: { subscribedAt: Date } | null;
+};
+
+/**
+ * S2-21: чесні взаємовиключні інтервали від підписки до відписки.
+ * Рядки без профілю не губимо й не підкладаємо в «першу добу» — повертаємо
+ * окремим unknown, щоб сума в інтерфейсі завжди сходилася з total.
+ */
+export function buildUnsubscribeTiming(rows: UnsubscribeTimingEvent[]) {
+  const counts = { day1: 0, week: 0, month: 0, later: 0 };
+  let unknown = 0;
+  const dayMs = 86_400_000;
+
+  for (const row of rows) {
+    if (!row.subscriberProfile) {
+      unknown += 1;
+      continue;
+    }
+
+    const duration = Math.max(0, row.occurredAt.getTime() - row.subscriberProfile.subscribedAt.getTime());
+    if (duration < dayMs) counts.day1 += 1;
+    else if (duration < 7 * dayMs) counts.week += 1;
+    else if (duration < 30 * dayMs) counts.month += 1;
+    else counts.later += 1;
+  }
+
+  const knownTotal = rows.length - unknown;
+  const bucket = (count: number) => ({
+    count,
+    share: knownTotal > 0 ? count / knownTotal : 0,
+  });
+
+  return {
+    total: rows.length,
+    knownTotal,
+    unknown,
+    buckets: {
+      day1: bucket(counts.day1),
+      week: bucket(counts.week),
+      month: bucket(counts.month),
+      later: bucket(counts.later),
+    },
+  };
+}
+
 export function buildUnknownSourceMonitor(
   current: AttributionStat[],
   previous: AttributionStat[],
@@ -377,6 +424,23 @@ export class DashboardService {
         };
       }),
     );
+  }
+
+  async getUnsubscribeTiming(workspaceId: string, opts: ReportFilterOpts = {}) {
+    const range = kyivDateRange(opts.from, opts.to);
+    const where: Prisma.UnsubscribeEventWhereInput = { workspaceId };
+    if (opts.channelId) where.channelId = opts.channelId;
+    if (range) where.occurredAt = range;
+
+    const rows = await this.prisma.unsubscribeEvent.findMany({
+      where,
+      select: {
+        occurredAt: true,
+        subscriberProfile: { select: { subscribedAt: true } },
+      },
+    });
+
+    return buildUnsubscribeTiming(rows);
   }
 
   async getSubscriberFeed(

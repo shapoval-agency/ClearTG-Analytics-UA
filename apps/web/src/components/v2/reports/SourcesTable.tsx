@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Card, EmptyState } from '@/components/v2/ui';
 import { formatPercentUk } from '@/lib/labels';
 import type { CampaignReportRow } from '@/lib/api';
+import { trafficSourceLabel } from '@/components/v2/links/link-kind';
 
 /**
  * «Джерела» — розріз по кампанії. Кампанія в цьому продукті і є джерело
@@ -46,11 +47,12 @@ export function SourcesTable({
   return (
     <Card title="Джерела" hint="Що приводить підписників, а що просто витрачає бюджет">
       <div className="-mx-4 overflow-x-auto sm:-mx-5">
-        <table className="w-full text-sm min-w-[720px]">
+        <table className="w-full text-sm min-w-[860px]">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-xs text-slate-500">
               <th className="font-medium py-2 px-5">Кампанія</th>
               <th className="font-medium py-2 px-3 text-right">Кліки</th>
+              <th className="font-medium py-2 px-3 text-right">Дійшли</th>
               <th className="font-medium py-2 px-3 text-right">Підписки</th>
               <th className="font-medium py-2 px-3 text-right">Відписки</th>
               <th className="font-medium py-2 px-3 text-right">Залишилось</th>
@@ -63,9 +65,13 @@ export function SourcesTable({
               <tr key={row.id} className="border-b border-slate-100 last:border-0 hover:bg-brand-50/40">
                 <td className="py-2.5 px-5">
                   <p className="font-medium text-slate-900">{row.name}</p>
-                  <p className="text-xs text-slate-400">{row.channelTitle}</p>
+                  <p className="text-xs text-slate-400">{trafficSourceLabel(row.adPlatform)} · {row.channelTitle}</p>
                 </td>
                 <td className="py-2.5 px-3 text-right tabular-nums">{row.clicks}</td>
+                <td className="py-2.5 px-3 text-right tabular-nums">
+                  <p>{row.reached}</p>
+                  <p className="text-xs text-slate-400">{row.clicks > 0 ? formatPercentUk(row.reachRate) : '—'}</p>
+                </td>
                 <td className="py-2.5 px-3 text-right tabular-nums">{row.subscribers}</td>
                 <td className="py-2.5 px-3 text-right tabular-nums">{row.unsubscribes}</td>
                 <td className="py-2.5 px-3 text-right tabular-nums">
@@ -87,6 +93,7 @@ export function SourcesTable({
                     Не прив&apos;язано до жодної кампанії з переліку вище — пряме посилання, посилання без кампанії або вступ поза рекламою
                   </p>
                 </td>
+                <td className="py-2.5 px-3 text-right text-slate-300">—</td>
                 <td className="py-2.5 px-3 text-right text-slate-300">—</td>
                 <td className="py-2.5 px-3 text-right tabular-nums text-slate-500">
                   {unattributedSubscribers}

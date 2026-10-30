@@ -26,11 +26,12 @@ export function LinksTable({ rows }: { rows: TrackingLinkReportRow[] }) {
   return (
     <Card title="Посилання" hint="Той самий трафік, розрізаний по конкретному посиланню">
       <div className="-mx-4 overflow-x-auto sm:-mx-5">
-        <table className="w-full text-sm min-w-[480px]">
+        <table className="w-full text-sm min-w-[720px]">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-xs text-slate-500">
               <th className="font-medium py-2 px-5">Посилання</th>
               <th className="font-medium py-2 px-3 text-right">Кліки</th>
+              <th className="font-medium py-2 px-3 text-right">Дійшли</th>
               <th className="font-medium py-2 px-3 text-right">Підписники</th>
               <th className="font-medium py-2 px-3 text-right">Ефективність</th>
             </tr>
@@ -44,8 +45,22 @@ export function LinksTable({ rows }: { rows: TrackingLinkReportRow[] }) {
                     {row.campaignName ? `${row.campaignName} · ` : ''}
                     {row.channelTitle}
                   </p>
+                  {(row.creativeTag || row.utmContent || row.landingPostUrl || row.postNumber) && (
+                    <p className="mt-1 max-w-[360px] truncate text-xs text-brand-600">
+                      {[
+                        row.creativeTag || row.utmContent ? `креатив: ${row.creativeTag || row.utmContent}` : null,
+                        row.landingPostUrl || row.postNumber
+                          ? `допис: ${row.landingPostUrl || `№${row.postNumber}`}`
+                          : null,
+                      ].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                 </td>
                 <td className="py-2.5 px-3 text-right tabular-nums">{row.clicks}</td>
+                <td className="py-2.5 px-3 text-right tabular-nums">
+                  <p>{row.reached}</p>
+                  <p className="text-xs text-slate-400">{row.clicks > 0 ? formatPercentUk(row.reachRate) : '—'}</p>
+                </td>
                 <td className="py-2.5 px-3 text-right tabular-nums">{row.subscribers}</td>
                 <td className="py-2.5 px-3 text-right tabular-nums">
                   {row.clicks > 0 ? formatPercentUk(row.conversionRate) : '—'}

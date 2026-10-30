@@ -109,6 +109,23 @@ export interface TrackingLinkReportRow {
   landingPostUrl: string | null;
 }
 
+export interface UnsubscribeTimingBucket {
+  count: number;
+  share: number;
+}
+
+export interface UnsubscribeTimingReport {
+  total: number;
+  knownTotal: number;
+  unknown: number;
+  buckets: {
+    day1: UnsubscribeTimingBucket;
+    week: UnsubscribeTimingBucket;
+    month: UnsubscribeTimingBucket;
+    later: UnsubscribeTimingBucket;
+  };
+}
+
 /** GET /api/dashboard/subscribers — рядок списку «Учасники». */
 export interface SubscriberFeedRow {
   id: string;

@@ -50,7 +50,7 @@ export function Card({
   return (
     <section
       className={clsx(
-        'bg-white rounded-[18px] border border-[#dbe4f0] p-4 shadow-[0_10px_34px_rgba(20,52,110,0.055)] sm:p-5',
+        'min-w-0 bg-white rounded-[18px] border border-[#dbe4f0] p-4 shadow-[0_10px_34px_rgba(20,52,110,0.055)] sm:p-5',
         className,
       )}
     >

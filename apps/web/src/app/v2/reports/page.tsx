@@ -5,6 +5,8 @@ import {
   type DashboardOverview,
   type CampaignReportRow,
   type TrackingLinkReportRow,
+  type UnsubscribeFeedRow,
+  type UnsubscribeTimingReport,
 } from '@/lib/api';
 import { PageHeader, ErrorState, DisconnectedState, EmptyState } from '@/components/v2/ui';
 import type { ChannelListItem } from '@/components/v2/channels/ChannelCard';
@@ -14,6 +16,13 @@ import { SourcesTable } from '@/components/v2/reports/SourcesTable';
 import { LinksTable } from '@/components/v2/reports/LinksTable';
 import { resolvePeriod } from '@/components/v2/reports/period';
 import { AttributionQuality } from '@/components/v2/reports/AttributionQuality';
+import { PerformanceBreakdown } from '@/components/v2/reports/PerformanceBreakdown';
+import { UnsubscribeTiming } from '@/components/v2/reports/UnsubscribeTiming';
+import {
+  buildCreativeBreakdown,
+  buildLandingPostBreakdown,
+  buildUnsubscribeTimingFromFeed,
+} from '@/components/v2/reports/report-breakdowns';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,11 +77,12 @@ export default async function V2ReportsPage({
   let previousOverview: DashboardOverview | null = null;
   let campaigns: CampaignReportRow[] = [];
   let links: TrackingLinkReportRow[] = [];
+  let unsubscribeTiming: UnsubscribeTimingReport | null = null;
   let failed = false;
   let sessionExpired = false;
 
   try {
-    [channels, overview, campaigns, links, previousOverview] = await Promise.all([
+    [channels, overview, campaigns, links, previousOverview, unsubscribeTiming] = await Promise.all([
       api<ChannelListItem[]>('/api/channels'),
       api<DashboardOverview>(`/api/dashboard/overview${query}`),
       api<CampaignReportRow[]>(`/api/dashboard/campaigns${query}`),
@@ -80,6 +90,14 @@ export default async function V2ReportsPage({
       previousQuery
         ? api<DashboardOverview>(`/api/dashboard/overview${previousQuery}`)
         : Promise.resolve(null),
+      api<UnsubscribeTimingReport>(`/api/dashboard/unsubscribe-timing${query}`).catch(async () => {
+        // Поетапний деплой: web може оновитися раніше за VPS API. Старий feed
+        // уже має subscribedAt/occurredAt, тому тимчасово рахуємо ті самі
+        // інтервали тут і не ламаємо весь розділ 404-відповіддю нового endpoint.
+        const feedQuery = buildQuery({ from: period.from, to: period.to, channelId, limit: '5000' });
+        const rows = await api<UnsubscribeFeedRow[]>(`/api/dashboard/unsubscribes${feedQuery}`);
+        return buildUnsubscribeTimingFromFeed(rows);
+      }),
     ]);
   } catch (err) {
     if (err instanceof AuthError) sessionExpired = true;
@@ -161,6 +179,8 @@ export default async function V2ReportsPage({
     0,
     overview.subscribers - campaigns.reduce((sum, c) => sum + c.subscribers, 0),
   );
+  const creativeRows = buildCreativeBreakdown(links);
+  const landingPostRows = buildLandingPostBreakdown(links);
 
   return (
     <>
@@ -177,13 +197,30 @@ export default async function V2ReportsPage({
         <>
           <KpiRow overview={overview} previous={previousOverview} />
           <div className="grid gap-6">
-            <AttributionQuality overview={overview} />
             <SourcesTable
               rows={campaigns}
               unattributedSubscribers={unattributedSubscribers}
               totalSubscribers={overview.subscribers}
             />
             <LinksTable rows={links} />
+            <PerformanceBreakdown
+              title="Креативи"
+              hint="Від джерела й кампанії до конкретного оголошення"
+              primaryHeading="Креатив"
+              emptyTitle="Креативи ще не розмічені"
+              emptyDescription="Додайте creative_tag або utm_content у посилання — і тут буде видно, яке оголошення приводить якісніших підписників."
+              rows={creativeRows}
+            />
+            <PerformanceBreakdown
+              title="Посадкові дописи"
+              hint="Порівняння конверсії конкретних Telegram-дописів"
+              primaryHeading="Допис"
+              emptyTitle="Немає посилань на конкретні дописи"
+              emptyDescription="Вкажіть URL посадкового допису в конструкторі посилання, щоб порівнювати їхню конверсію."
+              rows={landingPostRows}
+            />
+            {unsubscribeTiming && <UnsubscribeTiming report={unsubscribeTiming} />}
+            <AttributionQuality overview={overview} />
           </div>
         </>
       )}
