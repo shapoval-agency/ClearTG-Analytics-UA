@@ -8,14 +8,44 @@ import { TrackingService } from './tracking.service';
 import { CreateTrackingLinkDto } from './dto/create-tracking-link.dto';
 import { Public, RequiresWorkspace } from '../common/decorators/auth.decorator';
 import { WorkspaceId } from '../common/decorators/user.decorator';
-import { renderLandingPage, renderShortlinkPage, renderRedirectPage, renderChannelUnavailablePage } from './tracking-html';
+import {
+  renderLandingPage,
+  renderShortlinkPage,
+  renderRedirectPage,
+  renderChannelUnavailablePage,
+  renderTrackingPreviewPage,
+} from './tracking-html';
 import type { RecordClickResult } from './tracking.service';
 
 type RequestWithMeta = {
+  method?: string;
   query: Record<string, string | undefined>;
   headers: Record<string, string>;
   ip?: string;
 };
+
+const LINK_PREVIEW_USER_AGENT =
+  /bot\b|crawler|spider|facebookexternalhit|slack-imgproxy|discordbot|whatsapp|skypeuripreview|viber|vkshare|linkpreview|embedly|iframely/i;
+
+/**
+ * Preview crawlers and browser prefetches request the public URL before the
+ * person actually opens it. Counting those GETs turns one desktop transition
+ * into two clicks. We only exclude explicit preview/prefetch signals; a second
+ * real navigation (even from the same device) remains a real click per the ТЗ.
+ */
+export function isAutomatedPreviewRequest(
+  headers: Record<string, string | undefined>,
+  method = 'GET',
+): boolean {
+  const userAgent = headers['user-agent'] ?? '';
+  const purpose = [headers['purpose'], headers['sec-purpose'], headers['x-purpose'], headers['x-moz']]
+    .filter(Boolean)
+    .join(' ');
+
+  return method.toUpperCase() === 'HEAD' ||
+    LINK_PREVIEW_USER_AGENT.test(userAgent) ||
+    /\b(prefetch|preview)\b/i.test(purpose);
+}
 
 function extractRequestMeta(req: RequestWithMeta) {
   return {
@@ -51,6 +81,26 @@ async function recordClickWithFallback(
     reply.redirect(302, fallback);
     return null;
   }
+}
+
+async function renderPreviewIfNeeded(
+  tracking: TrackingService,
+  slug: string,
+  req: RequestWithMeta,
+  reply: TrackingReply,
+  linkMode: 'LANDING_PAGE' | 'SHORTLINK',
+): Promise<string | null> {
+  if (!isAutomatedPreviewRequest(req.headers, req.method)) return null;
+
+  const link = await tracking.getLinkBySlug(slug);
+  tracking.assertLinkModeForRoute(link, linkMode);
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  reply.header('X-Robots-Tag', 'noindex, nofollow');
+
+  return renderTrackingPreviewPage(
+    link.landingTitle ?? link.channel.title,
+    link.landingDescription ?? `Перехід до Telegram-каналу «${link.channel.title}».`,
+  );
 }
 
 /**
@@ -99,6 +149,9 @@ export class LandingPageController {
     @Req() req: RequestWithMeta,
     @Res({ passthrough: true }) reply: TrackingReply,
   ) {
+    const preview = await renderPreviewIfNeeded(this.tracking, slug, req, reply, 'LANDING_PAGE');
+    if (preview) return preview;
+
     const result = await recordClickWithFallback(
       this.tracking,
       slug,
@@ -131,6 +184,9 @@ export class ShortlinkController {
     @Req() req: RequestWithMeta,
     @Res({ passthrough: true }) reply: TrackingReply,
   ) {
+    const preview = await renderPreviewIfNeeded(this.tracking, slug, req, reply, 'SHORTLINK');
+    if (preview) return preview;
+
     const result = await recordClickWithFallback(
       this.tracking,
       slug,

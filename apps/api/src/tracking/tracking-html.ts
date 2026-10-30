@@ -99,6 +99,38 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * Link-preview crawlers must be able to build a readable card without being
+ * counted as a person. The page deliberately has no Telegram CTA or redirect:
+ * a crawler must not consume a per-click invite or create attribution data.
+ */
+export function renderTrackingPreviewPage(title: string, description: string): string {
+  const safeTitle = escapeHtml(title);
+  const safeDescription = escapeHtml(description);
+
+  return `<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${safeTitle} — Telegram</title>
+  <meta name="description" content="${safeDescription}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="${safeTitle}">
+  <meta property="og:description" content="${safeDescription}">
+  <meta name="robots" content="noindex,nofollow">
+  <style>${baseStyles()}</style>
+</head>
+<body>
+  <div class="wrap">
+    <span class="badge">Telegram-канал</span>
+    <h1>${safeTitle}</h1>
+    <p class="lead">${safeDescription}</p>
+  </div>
+</body>
+</html>`;
+}
+
 /** tgtrack-style: capture click then redirect to Telegram (same HTML for all clients). */
 export function renderRedirectPage(ctx: LandingPageContext, delaySeconds: number): string {
   const channel = escapeHtml(ctx.channelTitle);
