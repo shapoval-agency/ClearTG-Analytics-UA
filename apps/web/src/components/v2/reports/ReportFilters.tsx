@@ -47,7 +47,7 @@ export function ReportFilters({
       <div
         role="group"
         aria-label="Період"
-        className="flex max-w-full overflow-x-auto rounded-xl border border-[#dbe4f0] bg-white p-1 shadow-sm"
+        className="grid w-full max-w-full grid-cols-2 rounded-xl border border-[#dbe4f0] bg-white p-1 shadow-sm min-[360px]:flex sm:w-auto"
       >
         {PERIOD_OPTIONS.map((opt) => (
           <button

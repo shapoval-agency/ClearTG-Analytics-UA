@@ -11,6 +11,7 @@
 - Custom dropdown captures: `docs/new-dashboard/qa/custom-dropdown-desktop.png` and `docs/new-dashboard/qa/custom-dropdown-mobile.png`.
 - Channel-status compatibility capture: `docs/new-dashboard/qa/channel-status-desktop.png`.
 - Report-improvements captures: `docs/new-dashboard/qa/reports-improvements-desktop.png` and `docs/new-dashboard/qa/reports-improvements-mobile.png`.
+- Full mobile overview capture: `docs/new-dashboard/qa/overview-mobile-full.png` (390 px wide).
 - State: authenticated staging workspace with real API data, all-time period, all channels.
 - Runtime: optimized Next.js production build in headless Chromium.
 
@@ -35,6 +36,7 @@
 - Verified legacy channel payloads against Telegram live status: confirmed rights render as green `Працює`; an explicit missing-admin response remains yellow `Потребує уваги`.
 - Verified the four report additions against authenticated staging data in the optimized production build: reach is visible per source and link; creative rows aggregate real link metrics; landing posts have an honest empty state; unsubscribe timing shows four mutually exclusive intervals.
 - Verified the reports page at 390 px after adding the wider data columns: document and main widths remain exactly 390 px, every report card is 358 px wide, and only the two dense tables use contained horizontal scrolling.
+- Rechecked the complete overview at 320, 360 and 390 px: document/main width exactly matches each viewport, no element crosses the viewport, and the persistent mobile navigation exposes all five product sections.
 
 ## Iterations resolved
 
@@ -46,6 +48,7 @@
 - P1: legacy `GET /api/channels` omitted `botCanInviteUsers`, which the UI treated as `false`; missing values now receive a live status check and are never converted into a fabricated warning.
 - P1: adding reach columns gave report grid items a wider intrinsic size and clipped later mobile cards; made the shared card surface shrinkable so wide tables remain isolated inside their scroll containers.
 - P2: the unsubscribe-timing endpoint may arrive after the web deployment; added a compatibility fallback based on the existing unsubscribe feed so staggered VPS deployments do not break the report.
+- P1: the recent-activity wrapper imposed a 446 px intrinsic grid width, clipping every lower overview card on phones; removed the grid minimum, constrained direct main children, and made the 320 px period/attribution layouts stack without horizontal scrolling.
 
 No unresolved P0, P1 or P2 findings remain.
 

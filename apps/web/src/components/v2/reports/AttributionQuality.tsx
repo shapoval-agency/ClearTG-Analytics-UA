@@ -48,7 +48,7 @@ export function AttributionQuality({
         <span className="bg-brand-500" style={{ width: ratio(groups.calculated) }} />
         <span className="bg-slate-300" style={{ width: ratio(groups.unknown) }} />
       </div>
-      <div className={`mt-5 grid gap-4 ${compact ? 'grid-cols-3' : 'grid-cols-1 sm:grid-cols-3'}`}>
+      <div className={`mt-5 grid gap-4 ${compact ? 'grid-cols-1 min-[360px]:grid-cols-3' : 'grid-cols-1 sm:grid-cols-3'}`}>
         {[
           { label: 'Точне', count: groups.exact, color: 'bg-emerald-400' },
           { label: 'Розраховане', count: groups.calculated, color: 'bg-brand-500' },

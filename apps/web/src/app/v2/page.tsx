@@ -187,7 +187,7 @@ export default async function V2OverviewPage({
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.85fr)]">
             <ActiveChannelsBlock channels={channels} />
             <AttributionQuality overview={overview} compact />
-            <div className="lg:col-span-2">
+            <div className="min-w-0 lg:col-span-2">
               <RecentActivity items={buildActivity(recentSubs, recentUnsubs)} />
             </div>
           </div>
