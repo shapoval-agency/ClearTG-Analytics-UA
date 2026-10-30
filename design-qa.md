@@ -9,6 +9,7 @@
 - Focused comparisons: `command-deck-comparison-header.png` and `command-deck-comparison-content.png` in the same directory.
 - Additional mobile captures: channels, links, reports and subscribers in `docs/new-dashboard/qa/mobile-*.png`.
 - Custom dropdown captures: `docs/new-dashboard/qa/custom-dropdown-desktop.png` and `docs/new-dashboard/qa/custom-dropdown-mobile.png`.
+- Channel-status compatibility capture: `docs/new-dashboard/qa/channel-status-desktop.png`.
 - State: authenticated staging workspace with real API data, all-time period, all channels.
 - Runtime: optimized Next.js production build in headless Chromium.
 
@@ -29,6 +30,7 @@
 - Focus-visible rings, semantic labels, reduced-motion handling, practical mobile tap areas and readable contrast are implemented.
 - Browser console after the final production pass: no errors or uncaught exceptions.
 - Compatibility guard verified: an older API response without `unknownSourceMonitor` no longer crashes the overview or reports page during a staggered deployment.
+- Verified legacy channel payloads against Telegram live status: confirmed rights render as green `Працює`; an explicit missing-admin response remains yellow `Потребує уваги`.
 
 ## Iterations resolved
 
@@ -37,6 +39,7 @@
 - P1: the full channel list pushed recent activity below the useful overview area; limited the overview preview to three channels while retaining the link to the complete section.
 - P2: development tooling appeared in screenshots; repeated the final pass against the optimized production build.
 - P2: native browser selects broke the Command Deck visual language; replaced them with a shared light/dark dropdown system and verified open states on desktop and mobile.
+- P1: legacy `GET /api/channels` omitted `botCanInviteUsers`, which the UI treated as `false`; missing values now receive a live status check and are never converted into a fabricated warning.
 
 No unresolved P0, P1 or P2 findings remain.
 

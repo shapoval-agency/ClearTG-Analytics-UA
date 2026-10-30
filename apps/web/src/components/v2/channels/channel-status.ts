@@ -23,7 +23,8 @@ export interface ChannelStatusView {
 export interface ChannelStatusInput {
   isActive: boolean;
   botIsAdmin: boolean;
-  botCanInviteUsers: boolean;
+  /** `undefined` означає legacy API payload, а не відсутність права. */
+  botCanInviteUsers?: boolean;
 }
 
 /**
@@ -50,7 +51,7 @@ export function deriveChannelStatus(channel: ChannelStatusInput): ChannelStatusV
     };
   }
 
-  if (!channel.botCanInviteUsers) {
+  if (channel.botCanInviteUsers === false) {
     return {
       status: 'attention',
       label: 'Потребує уваги',

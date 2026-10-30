@@ -3,8 +3,34 @@ import { api, AuthError } from '@/lib/api';
 import { PageHeader, ErrorState, DisconnectedState } from '@/components/v2/ui';
 import { ChannelCard, type ChannelListItem } from '@/components/v2/channels/ChannelCard';
 import { ConnectChannelPanel } from '@/components/v2/channels/ConnectChannelPanel';
+import type { BotStatusResponse } from '@/components/v2/channels/channel-status';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Сумісність із попередньою версією API, яка ще не віддавала
+ * `botCanInviteUsers` у списку. Відсутнє поле не можна трактувати як false:
+ * для активних каналів один раз уточнюємо реальний стан через уже наявний
+ * bot-status endpoint. Після оновлення API цей fallback взагалі не виконується.
+ */
+async function hydrateLegacyBotPermissions(channels: ChannelListItem[]) {
+  return Promise.all(channels.map(async (channel) => {
+    if (!channel.isActive || typeof channel.botCanInviteUsers === 'boolean') return channel;
+
+    try {
+      const check = await api<BotStatusResponse>(`/api/channels/${channel.id}/bot-status`);
+      return {
+        ...channel,
+        botIsAdmin: check.isAdmin,
+        botCanInviteUsers: check.canInviteUsers,
+      };
+    } catch {
+      // Якщо жива перевірка тимчасово недоступна, не підміняємо unknown на
+      // false: картка не повинна показувати вигадану проблему з правами.
+      return channel;
+    }
+  }));
+}
 
 /**
  * Канали — перший перенесений модуль MVP.
@@ -27,7 +53,8 @@ export default async function V2ChannelsPage() {
   let sessionExpired = false;
 
   try {
-    channels = await api<ChannelListItem[]>('/api/channels');
+    const storedChannels = await api<ChannelListItem[]>('/api/channels');
+    channels = await hydrateLegacyBotPermissions(storedChannels);
   } catch (err) {
     // middleware перекидає на /login лише коли cookie немає зовсім.
     // Протухлий токен доходить сюди — показуємо зрозумілий стан,
