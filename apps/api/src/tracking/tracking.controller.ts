@@ -12,7 +12,7 @@ import { renderLandingPage, renderShortlinkPage, renderRedirectPage, renderChann
 import type { RecordClickResult } from './tracking.service';
 
 type RequestWithMeta = {
-  query: Record<string, string>;
+  query: Record<string, string | undefined>;
   headers: Record<string, string>;
   ip?: string;
 };
@@ -23,6 +23,34 @@ function extractRequestMeta(req: RequestWithMeta) {
     userAgent: req.headers['user-agent'],
     referer: req.headers['referer'],
   };
+}
+
+export function safeTelegramFallback(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 't.me' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function recordClickWithFallback(
+  tracking: TrackingService,
+  slug: string,
+  req: RequestWithMeta,
+  reply: TrackingReply,
+  pageSource: 'landing_page' | 'shortlink_page',
+  linkMode: 'LANDING_PAGE' | 'SHORTLINK',
+) {
+  try {
+    return await tracking.recordClick(slug, req.query, extractRequestMeta(req), pageSource, linkMode);
+  } catch (error) {
+    const fallback = safeTelegramFallback(req.query.ctg_fallback);
+    if (!fallback) throw error;
+    reply.redirect(302, fallback);
+    return null;
+  }
 }
 
 /**
@@ -71,13 +99,15 @@ export class LandingPageController {
     @Req() req: RequestWithMeta,
     @Res({ passthrough: true }) reply: TrackingReply,
   ) {
-    const result = await this.tracking.recordClick(
+    const result = await recordClickWithFallback(
+      this.tracking,
       slug,
-      req.query as Record<string, string | undefined>,
-      extractRequestMeta(req),
+      req,
+      reply,
       'landing_page',
       'LANDING_PAGE',
     );
+    if (!result) return;
 
     const body = respondToClick(result, reply);
     if (body === undefined) {
@@ -101,13 +131,15 @@ export class ShortlinkController {
     @Req() req: RequestWithMeta,
     @Res({ passthrough: true }) reply: TrackingReply,
   ) {
-    const result = await this.tracking.recordClick(
+    const result = await recordClickWithFallback(
+      this.tracking,
       slug,
-      req.query as Record<string, string | undefined>,
-      extractRequestMeta(req),
+      req,
+      reply,
       'shortlink_page',
       'SHORTLINK',
     );
+    if (!result) return;
 
     const body = respondToClick(result, reply);
     if (body === undefined) {

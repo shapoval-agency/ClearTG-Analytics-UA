@@ -65,7 +65,10 @@ export function LinkBuilder({
   const [utmSource, setUtmSource] = useState('');
   const [utmMedium, setUtmMedium] = useState('');
   const [utmCampaign, setUtmCampaign] = useState('');
+  const [utmContent, setUtmContent] = useState('');
+  const [utmTerm, setUtmTerm] = useState('');
   const [creativeTag, setCreativeTag] = useState('');
+  const [postUrl, setPostUrl] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ url: string; hint: string } | null>(null);
@@ -104,7 +107,10 @@ export function LinkBuilder({
     setUtmSource('');
     setUtmMedium('');
     setUtmCampaign('');
+    setUtmContent('');
+    setUtmTerm('');
     setCreativeTag('');
+    setPostUrl('');
     setNewCampaignName('');
   }
 
@@ -173,7 +179,11 @@ export function LinkBuilder({
         utmSource,
         utmMedium,
         utmCampaign,
+        utmContent,
+        utmTerm,
         creativeTag,
+        destinationMode: postUrl.trim() ? 'PUBLIC_POST' : undefined,
+        landingPostUrl: postUrl,
       });
       if (res.error || !res.link) {
         setError(res.error ?? 'Не вдалося створити посилання');
@@ -373,6 +383,23 @@ export function LinkBuilder({
       {/* 6. Мітки — тільки для посилань з мітками, згорнуто */}
       {kind === 'tracking' && (
         <div className="mb-4">
+          <div className="mb-4">
+            <label className={labelCls} htmlFor="v2-post-url">
+              Конкретний допис у Telegram <span className="text-slate-400">(необов’язково)</span>
+            </label>
+            <input
+              id="v2-post-url"
+              type="url"
+              className={field}
+              value={postUrl}
+              onChange={(e) => setPostUrl(e.target.value)}
+              placeholder="https://t.me/channel/123"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Залиште порожнім, щоб вести на канал. Якщо вкажете адресу допису, клік і мітки
+              збережуться, а користувач відкриє саме цей допис.
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => setShowMarks((v) => !v)}
@@ -397,6 +424,16 @@ export function LinkBuilder({
                 <label className={labelCls} htmlFor="v2-utm-campaign">utm_campaign</label>
                 <input id="v2-utm-campaign" className={field} value={utmCampaign}
                   onChange={(e) => setUtmCampaign(e.target.value)} placeholder="summer" />
+              </div>
+              <div>
+                <label className={labelCls} htmlFor="v2-utm-content">utm_content</label>
+                <input id="v2-utm-content" className={field} value={utmContent}
+                  onChange={(e) => setUtmContent(e.target.value)} placeholder="banner_blue" />
+              </div>
+              <div>
+                <label className={labelCls} htmlFor="v2-utm-term">utm_term</label>
+                <input id="v2-utm-term" className={field} value={utmTerm}
+                  onChange={(e) => setUtmTerm(e.target.value)} placeholder="telegram analytics" />
               </div>
               <div>
                 <label className={labelCls} htmlFor="v2-creative">Креатив</label>

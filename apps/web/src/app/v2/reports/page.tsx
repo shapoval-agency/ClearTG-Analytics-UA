@@ -13,6 +13,7 @@ import { KpiRow } from '@/components/v2/reports/KpiRow';
 import { SourcesTable } from '@/components/v2/reports/SourcesTable';
 import { LinksTable } from '@/components/v2/reports/LinksTable';
 import { resolvePeriod } from '@/components/v2/reports/period';
+import { AttributionQuality } from '@/components/v2/reports/AttributionQuality';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,17 +27,14 @@ function buildQuery(params: Record<string, string | undefined>): string {
 }
 
 /**
- * Звіти — третій реалізований модуль MVP, поверх backend з
- * v2-reports-backend-review.md (period/channel-фільтри, reach вже готові
- * й протестовані). Тут лише фронтенд — жодних нових API чи полів.
+ * Звіти — третій реалізований модуль MVP: period/channel-фільтри, reach,
+ * порівняння з попереднім періодом, якість атрибуції та CSV-експорт.
  *
  * Один розділ зі спільними фільтрами (період, канал) замість шести
  * розрізнених сторінок старого кабінету. «Джерела» і «кампанії» — той самий
  * розріз (getCampaignReports() вже групує по кампанії), тому окремого блоку
- * не робимо. Розбивку по 5 типах атрибуції (S1-23) в цій ітерації свідомо
- * не показуємо окремим блоком — замість неї чесний рядок «Джерело не визначено»
- * прямо в «Джерелах», коли сума по кампаніях менша за загальну кількість
- * підписок (див. v2-reports-ui-plan.md, розділ 2).
+ * не робимо. П'ять технічних типів атрибуції зведені в три зрозумілі групи:
+ * точне, розраховане та невизначене джерело.
  */
 export default async function V2ReportsPage({
   searchParams,
@@ -46,27 +44,42 @@ export default async function V2ReportsPage({
   const { period: periodParam, channelId } = await searchParams;
   const period = resolvePeriod(periodParam);
   const query = buildQuery({ from: period.from, to: period.to, channelId });
+  const previousQuery = period.previousFrom
+    ? buildQuery({ from: period.previousFrom, to: period.previousTo, channelId })
+    : null;
 
   const header = (
     <PageHeader
       title="Звіти"
       description="Яке джерело приводить підписників і наскільки добре воно працює."
-    />
+    >
+      <a
+        href={`/api/dashboard/reports/export.csv${query}`}
+        download
+        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+      >
+        Експорт CSV
+      </a>
+    </PageHeader>
   );
 
   let channels: ChannelListItem[] = [];
   let overview: DashboardOverview | null = null;
+  let previousOverview: DashboardOverview | null = null;
   let campaigns: CampaignReportRow[] = [];
   let links: TrackingLinkReportRow[] = [];
   let failed = false;
   let sessionExpired = false;
 
   try {
-    [channels, overview, campaigns, links] = await Promise.all([
+    [channels, overview, campaigns, links, previousOverview] = await Promise.all([
       api<ChannelListItem[]>('/api/channels'),
       api<DashboardOverview>(`/api/dashboard/overview${query}`),
       api<CampaignReportRow[]>(`/api/dashboard/campaigns${query}`),
       api<TrackingLinkReportRow[]>(`/api/dashboard/tracking-links${query}`),
+      previousQuery
+        ? api<DashboardOverview>(`/api/dashboard/overview${previousQuery}`)
+        : Promise.resolve(null),
     ]);
   } catch (err) {
     if (err instanceof AuthError) sessionExpired = true;
@@ -124,7 +137,7 @@ export default async function V2ReportsPage({
   const isUnfiltered = period.value === 'all' && !channelId;
 
   // ── Empty: реклами взагалі ще не було — не залежить від фільтра ───
-  if (overview.clicks === 0 && isUnfiltered) {
+  if (overview.clicks === 0 && overview.subscribers === 0 && isUnfiltered) {
     return (
       <>
         {header}
@@ -154,7 +167,7 @@ export default async function V2ReportsPage({
       {header}
       <ReportFilters channels={channels} period={period.value} channelId={channelId} />
 
-      {overview.clicks === 0 ? (
+      {overview.clicks === 0 && overview.subscribers === 0 ? (
         // ── Empty: дані загалом є, але не за цей фільтр ──────────────
         <EmptyState
           title="За цей період даних немає"
@@ -162,9 +175,14 @@ export default async function V2ReportsPage({
         />
       ) : (
         <>
-          <KpiRow overview={overview} />
+          <KpiRow overview={overview} previous={previousOverview} />
           <div className="grid gap-6">
-            <SourcesTable rows={campaigns} unattributedSubscribers={unattributedSubscribers} />
+            <AttributionQuality overview={overview} />
+            <SourcesTable
+              rows={campaigns}
+              unattributedSubscribers={unattributedSubscribers}
+              totalSubscribers={overview.subscribers}
+            />
             <LinksTable rows={links} />
           </div>
         </>

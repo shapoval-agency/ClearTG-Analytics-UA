@@ -32,14 +32,26 @@ export class AttributionService {
     const windowMinutes = campaign?.attributionWindowMinutes ?? 10080;
     const windowStart = new Date(event.occurredAt.getTime() - windowMinutes * 60 * 1000);
 
-    const recentClicks = await this.prisma.clickEvent.findMany({
-      where: {
-        channelId: event.channelId,
-        clickedAt: { gte: windowStart, lte: event.occurredAt },
-      },
-      orderBy: { clickedAt: 'desc' },
-      take: 50,
-    });
+    const [recentClicks, exactInviteClick] = await Promise.all([
+      this.prisma.clickEvent.findMany({
+        where: {
+          channelId: event.channelId,
+          clickedAt: { gte: windowStart, lte: event.occurredAt },
+        },
+        orderBy: { clickedAt: 'desc' },
+        take: 50,
+      }),
+      inviteRecord?.clickEventId
+        ? this.prisma.clickEvent.findUnique({ where: { id: inviteRecord.clickEventId } })
+        : Promise.resolve(null),
+    ]);
+
+    // Точний клік invite-посилання не можна втрачати лише тому, що після
+    // нього канал отримав понад 50 інших кліків. Додаємо його явно, а ліміт
+    // залишаємо тільки для ймовірнісних кандидатів.
+    const clickCandidates = exactInviteClick
+      ? [exactInviteClick, ...recentClicks.filter((click) => click.id !== exactInviteClick.id)]
+      : recentClicks;
 
     const inviteLinkUsed = inviteRecord
       ? {
@@ -57,7 +69,7 @@ export class AttributionService {
       subscribedAt: event.occurredAt,
       attributionWindowMinutes: windowMinutes,
       inviteLinkUsed,
-      recentClicks: recentClicks.map((c) => ({
+      recentClicks: clickCandidates.map((c) => ({
         id: c.id,
         campaignId: c.campaignId,
         trackingLinkId: c.trackingLinkId,

@@ -122,8 +122,13 @@ export interface TrackingLinkApi {
   isActive: boolean;
   createdAt: string;
   utmSource: string | null;
+  utmMedium: string | null;
   utmCampaign: string | null;
+  utmContent: string | null;
+  utmTerm: string | null;
   creativeTag: string | null;
+  postNumber: number | null;
+  landingPostUrl: string | null;
   channel: { id: string; title: string };
   campaign: { id: string; name: string; adPlatform: string } | null;
   _count: { clickEvents: number };
@@ -149,6 +154,8 @@ export interface LinkRowData {
   source: string | null;
   campaignName: string | null;
   marks: string[];
+  /** Готовий код для встановлення на сайт; лише для посилань з мітками. */
+  embedScript: string | null;
   /** null для запрошувальних — Telegram не рахує кліки, і вигадувати нуль не можна. */
   clicks: number | null;
   isActive: boolean;
@@ -161,9 +168,16 @@ export function normalizeTrackingLink(
   appUrl: string,
 ): LinkRowData {
   const marks: string[] = [];
-  if (link.utmSource) marks.push(`utm: ${link.utmSource}`);
-  if (link.utmCampaign) marks.push(link.utmCampaign);
+  if (link.utmSource) marks.push(`utm_source: ${link.utmSource}`);
+  if (link.utmMedium) marks.push(`utm_medium: ${link.utmMedium}`);
+  if (link.utmCampaign) marks.push(`utm_campaign: ${link.utmCampaign}`);
+  if (link.utmContent) marks.push(`utm_content: ${link.utmContent}`);
+  if (link.utmTerm) marks.push(`utm_term: ${link.utmTerm}`);
   if (link.creativeTag) marks.push(`креатив: ${link.creativeTag}`);
+  if (link.landingPostUrl) marks.push(`допис: ${link.landingPostUrl}`);
+  else if (link.postNumber) marks.push(`допис №${link.postNumber}`);
+
+  const embedScript = `<script src="${appUrl}/cleartg.js" data-slug="${link.slug}" data-app-url="${appUrl}" data-path="${link.publicPath}" defer></script>`;
 
   return {
     id: link.id,
@@ -175,6 +189,7 @@ export function normalizeTrackingLink(
     source: link.campaign?.adPlatform ?? null,
     campaignName: link.campaign?.name ?? null,
     marks,
+    embedScript,
     clicks: link._count.clickEvents,
     isActive: link.isActive,
     statusLabel: link.isActive ? 'Активне' : 'Архівне',
@@ -193,6 +208,7 @@ export function normalizeInviteLink(link: InviteLinkApi): LinkRowData {
     source: link.campaign?.adPlatform ?? null,
     campaignName: link.campaign?.name ?? null,
     marks: [],
+    embedScript: null,
     clicks: null,
     isActive: !link.isRevoked,
     statusLabel: link.isRevoked ? 'Відкликане' : 'Активне',

@@ -61,3 +61,62 @@ describe('AttributionService.getAttributionStats', () => {
     expect(stats.find((s) => s.type === 'UNKNOWN')?.share).toBeCloseTo(0.25);
   });
 });
+
+describe('AttributionService.attributeMembership', () => {
+  it('не втрачає точний invite-клік, навіть якщо його немає серед 50 останніх', async () => {
+    const subscribedAt = new Date('2026-10-30T10:00:00.000Z');
+    const exactClick = {
+      id: 'click_exact',
+      campaignId: 'camp_1',
+      trackingLinkId: 'link_1',
+      clickedAt: new Date('2026-10-30T09:00:00.000Z'),
+    };
+    const prisma = {
+      membershipEvent: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'membership_1',
+          workspaceId: 'ws_1',
+          channelId: 'ch_1',
+          eventType: 'SUBSCRIBE',
+          occurredAt: subscribedAt,
+          channel: { id: 'ch_1' },
+        }),
+      },
+      inviteLink: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'invite_1',
+          clickEventId: exactClick.id,
+          campaignId: 'camp_1',
+          trackingLinkId: 'link_1',
+          createdAt: new Date('2026-10-30T09:00:00.000Z'),
+        }),
+      },
+      campaign: {
+        findUnique: vi.fn().mockResolvedValue({ attributionWindowMinutes: 10080 }),
+        findFirst: vi.fn(),
+      },
+      clickEvent: {
+        findMany: vi.fn().mockResolvedValue(
+          Array.from({ length: 50 }, (_, index) => ({
+            id: `newer_${index}`,
+            campaignId: 'camp_2',
+            trackingLinkId: 'link_2',
+            clickedAt: new Date(subscribedAt.getTime() - index * 1000),
+          })),
+        ),
+        findUnique: vi.fn().mockResolvedValue(exactClick),
+      },
+      attribution: {
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'attr_1', ...data })),
+      },
+    };
+    const audit = { log: vi.fn().mockResolvedValue(undefined) };
+    const service = new AttributionService(prisma as never, audit as never);
+
+    const result = await service.attributeMembership('membership_1', 'invite_1');
+
+    expect(result?.attributionType).toBe('EXACT_CLICK_INVITE');
+    expect(result?.clickEventId).toBe('click_exact');
+    expect(prisma.clickEvent.findUnique).toHaveBeenCalledWith({ where: { id: 'click_exact' } });
+  });
+});

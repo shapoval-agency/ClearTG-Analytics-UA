@@ -293,6 +293,8 @@ export class TelegramService implements OnModuleInit {
               title,
               username,
               botIsAdmin: true,
+              botCanInviteUsers: canInviteUsers === true,
+              botStatusCheckedAt: new Date(),
             },
           });
           this.logger.log(`Auto-registered channel ${telegramChatId}`, 'Telegram');
@@ -303,7 +305,13 @@ export class TelegramService implements OnModuleInit {
 
       await this.prisma.channel.updateMany({
         where: { telegramChatId },
-        data: { botIsAdmin: isAdmin, title: chat.title ?? 'Channel', username },
+        data: {
+          botIsAdmin: isAdmin,
+          botCanInviteUsers: isAdmin && canInviteUsers === true,
+          botStatusCheckedAt: new Date(),
+          title: chat.title ?? 'Channel',
+          username,
+        },
       });
 
       // Крім переходу в адміни, окремо перевіряємо зміну САМЕ права
@@ -451,17 +459,22 @@ export class TelegramService implements OnModuleInit {
     updateId: number,
     telegramInviteUrl?: string | null,
   ) {
+    const duplicateUpdate = await this.prisma.membershipEvent.findFirst({
+      where: {
+        workspaceId,
+        channelId,
+        eventType: MembershipEventType.SUBSCRIBE,
+        rawUpdateId: String(updateId),
+      },
+      select: { id: true },
+    });
+    if (duplicateUpdate) return;
+
     const lastProfile = await this.prisma.subscriberProfile.findFirst({
       where: { workspaceId, channelId, telegramUserId },
       orderBy: { subscribedAt: 'desc' },
       include: { _count: { select: { unsubscribeEvents: true } } },
     });
-
-    // Дублікат того самого chat_member update (Telegram шле кілька підряд) —
-    // не створюємо другий профіль, якщо останній ще активний (без відписки).
-    // Якщо останній профіль вже має відписку — це повторна підписка (resubscribe):
-    // створюємо новий профіль з новою атрибуцією джерела.
-    if (lastProfile && lastProfile._count.unsubscribeEvents === 0) return;
 
     let inviteLinkId: string | null = null;
     if (telegramInviteUrl) {
@@ -469,19 +482,47 @@ export class TelegramService implements OnModuleInit {
       inviteLinkId = invite?.id ?? null;
     }
 
-    const membershipEvent = await this.prisma.membershipEvent.create({
-      data: {
-        workspaceId,
-        channelId,
-        eventType: MembershipEventType.SUBSCRIBE,
-        telegramUserId,
-        telegramUsername: username,
-        telegramFirstName: firstName,
-        telegramLastName: lastName,
-        inviteLinkId,
-        rawUpdateId: String(updateId),
-      },
-    });
+    let membershipEvent: { id: string; occurredAt: Date };
+    try {
+      membershipEvent = await this.prisma.membershipEvent.create({
+        data: {
+          workspaceId,
+          channelId,
+          eventType: MembershipEventType.SUBSCRIBE,
+          telegramUserId,
+          telegramUsername: username,
+          telegramFirstName: firstName,
+          telegramLastName: lastName,
+          inviteLinkId,
+          rawUpdateId: String(updateId),
+        },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return;
+      throw err;
+    }
+
+    if (lastProfile && lastProfile._count.unsubscribeEvents === 0) {
+      // left/kicked → member доводить, що попередній цикл завершився, навіть
+      // якщо webhook відписки загубився. Точного часу виходу вже немає, тому
+      // закриваємо старий цикл у найпізніший достовірний момент.
+      await this.prisma.unsubscribeEvent.create({
+        data: {
+          workspaceId,
+          channelId,
+          subscriberProfileId: lastProfile.id,
+          telegramUserId,
+          telegramUsername: username,
+          telegramFirstName: firstName,
+          telegramLastName: lastName,
+          occurredAt: membershipEvent.occurredAt,
+        },
+      });
+      this.logger.warn(
+        `Відновлено пропущену відписку перед повторною підпискою user ${telegramUserId}`,
+        'Telegram',
+      );
+    }
 
     const externalIdHash = hashExternalId(telegramUserId, workspaceId, this.crypto.getHashSalt());
 
@@ -612,15 +653,15 @@ export class TelegramService implements OnModuleInit {
       const isAdmin =
         member.status === 'administrator' || member.status === 'creator';
       const canInviteUsers =
-        isAdmin &&
-        member.status === 'administrator' &&
-        'can_invite_users' in member &&
-        member.can_invite_users === true;
+        member.status === 'creator' ||
+        (member.status === 'administrator' &&
+          'can_invite_users' in member &&
+          member.can_invite_users === true);
       const canManageChat =
-        isAdmin &&
-        member.status === 'administrator' &&
-        'can_manage_chat' in member &&
-        member.can_manage_chat === true;
+        member.status === 'creator' ||
+        (member.status === 'administrator' &&
+          'can_manage_chat' in member &&
+          member.can_manage_chat === true);
 
       const issues: string[] = [];
       if (!isAdmin) issues.push('Додайте бота адміністратором каналу');
@@ -633,7 +674,7 @@ export class TelegramService implements OnModuleInit {
         canInviteUsers: Boolean(canInviteUsers),
         canManageChat: Boolean(canManageChat),
         issues,
-        ready: isAdmin,
+        ready: isAdmin && Boolean(canInviteUsers),
       };
     } catch {
       return {
@@ -682,6 +723,14 @@ export class TelegramService implements OnModuleInit {
     const isAdmin =
       member.status === 'administrator' || member.status === 'creator';
     if (!isAdmin) throw new Error('Bot is not admin in this channel');
+    const canInviteUsers =
+      member.status === 'creator' ||
+      (member.status === 'administrator' &&
+        'can_invite_users' in member &&
+        member.can_invite_users === true);
+    if (!canInviteUsers) {
+      throw new Error('Bot is admin but cannot invite users in this channel');
+    }
 
     const telegramChatId = String(chat.id);
     const title = 'title' in chat ? (chat.title ?? 'Channel') : 'Channel';
@@ -697,11 +746,15 @@ export class TelegramService implements OnModuleInit {
         title,
         username: chatUsername,
         botIsAdmin: true,
+        botCanInviteUsers: true,
+        botStatusCheckedAt: new Date(),
       },
       update: {
         title,
         username: chatUsername,
         botIsAdmin: true,
+        botCanInviteUsers: true,
+        botStatusCheckedAt: new Date(),
       },
     });
   }

@@ -66,6 +66,70 @@ function buildService(link: ReturnType<typeof buildFakeLink>) {
   return { service, prisma, crypto, inviteLinks, clickEventUpdate };
 }
 
+describe('TrackingService.createLink', () => {
+  it('зберігає повний набір UTM і маршрут на конкретний допис', async () => {
+    const create = vi.fn().mockImplementation(({ data }) => Promise.resolve({
+      ...data,
+      id: 'tracking_1',
+      linkMode: 'SHORTLINK',
+      slug: 'generated',
+    }));
+    const prisma = {
+      campaign: {
+        findFirst: vi.fn().mockResolvedValue({ adPlatform: 'META' }),
+      },
+      trackingLink: { create },
+    };
+    const service = new TrackingService(
+      prisma as never,
+      { getHashSalt: vi.fn() } as never,
+      {} as never,
+    );
+
+    const result = await service.createLink('ws_1', {
+      channelId: 'channel_1',
+      campaignId: 'campaign_1',
+      destinationMode: 'PUBLIC_POST',
+      landingPostUrl: 'https://t.me/example/123',
+      utmSource: 'meta',
+      utmMedium: 'cpc',
+      utmCampaign: 'launch',
+      utmContent: 'video-1',
+      utmTerm: 'analytics',
+      creativeTag: 'blue',
+    });
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        destinationMode: 'PUBLIC_POST',
+        landingPostUrl: 'https://t.me/example/123',
+        utmSource: 'meta',
+        utmMedium: 'cpc',
+        utmCampaign: 'launch',
+        utmContent: 'video-1',
+        utmTerm: 'analytics',
+        creativeTag: 'blue',
+      }),
+    }));
+    expect(result.publicPath).toBe('/r/generated');
+  });
+
+  it('не дозволяє підмінити Telegram-допис зовнішнім редиректом', async () => {
+    const prisma = {
+      campaign: { findFirst: vi.fn().mockResolvedValue(null) },
+      trackingLink: { create: vi.fn() },
+    };
+    const service = new TrackingService(prisma as never, {} as never, {} as never);
+
+    await expect(service.createLink('ws_1', {
+      channelId: 'channel_1',
+      destinationMode: 'PUBLIC_POST',
+      landingPostUrl: 'https://example.com/not-telegram',
+    })).rejects.toThrow('https://t.me/');
+    expect(prisma.trackingLink.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('TrackingService.recordClick', () => {
   beforeEach(() => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com');
@@ -119,5 +183,39 @@ describe('TrackingService.recordClick', () => {
 
     expect(result.channelUnavailable).toBe(true);
     expect(clickEventUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('TrackingService embed script', () => {
+  it('передає початкову t.me-адресу як fallback і відстежує динамічні посилання', () => {
+    const { service } = buildService(buildFakeLink());
+    const script = service.getEmbedScript();
+
+    expect(script).toContain('ctg_fallback');
+    expect(script).toContain('MutationObserver');
+    expect(script).toContain('data-path');
+  });
+
+  it('використовує фактичний /r шлях для shortlink у snippet', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com');
+    const prisma = {
+      trackingLink: {
+        findFirst: vi.fn().mockResolvedValue({
+          slug: 'organic-link',
+          linkMode: 'SHORTLINK',
+          channel: { title: 'Channel' },
+        }),
+      },
+    };
+    const service = new TrackingService(
+      prisma as never,
+      { getHashSalt: vi.fn() } as never,
+      {} as never,
+    );
+
+    const snippet = await service.getEmbedSnippet('ws_1', 'organic-link');
+
+    expect(snippet.directLink).toBe('https://app.example.com/r/organic-link');
+    expect(snippet.scriptTag).toContain('data-path="/r/organic-link"');
   });
 });

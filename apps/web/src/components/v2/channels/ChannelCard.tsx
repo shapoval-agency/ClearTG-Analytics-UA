@@ -8,6 +8,7 @@ export interface ChannelListItem {
   username: string | null;
   isActive: boolean;
   botIsAdmin: boolean;
+  botCanInviteUsers: boolean;
   _count: { membershipEvents: number; clickEvents: number };
 }
 
@@ -36,7 +37,7 @@ export function ChannelCard({ channel }: { channel: ChannelListItem }) {
 
       <p className="text-sm text-slate-600 mt-3">{view.meaning}</p>
 
-      {channel.isActive && !channel.botIsAdmin && (
+      {channel.isActive && (!channel.botIsAdmin || !channel.botCanInviteUsers) && (
         <ol className="mt-3 space-y-1 text-sm text-amber-700">
           <li>1. Відкрийте канал у Telegram → Адміністратори</li>
           <li>2. Додайте нашого бота адміністратором</li>

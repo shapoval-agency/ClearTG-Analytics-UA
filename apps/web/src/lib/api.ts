@@ -59,7 +59,13 @@ export interface DashboardOverview {
     share: number;
     confidenceLabel: string;
   }>;
-  dataIntegrity: { subscribers: number; attributed: number; missing: number; ok: boolean };
+  dataIntegrity: { subscribers: number; attributed: number; missing: number; extra: number; ok: boolean };
+  unknownSourceMonitor: {
+    current: { total: number; unknown: number; share: number };
+    previous: { total: number; unknown: number; share: number };
+    change: number;
+    alert: boolean;
+  };
   deliveryStats: Array<{ status: string; count: number }>;
 }
 
@@ -93,6 +99,14 @@ export interface TrackingLinkReportRow {
   unsubscribes: number;
   conversionRate: number;
   autoRedirect: boolean;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmContent: string | null;
+  utmTerm: string | null;
+  creativeTag: string | null;
+  postNumber: number | null;
+  landingPostUrl: string | null;
 }
 
 /** GET /api/dashboard/subscribers — рядок списку «Учасники». */

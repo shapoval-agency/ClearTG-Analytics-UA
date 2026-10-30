@@ -81,6 +81,17 @@ export class TrackingService {
         'Для переходу на конкретний пост вкажіть його номер (або повне посилання на пост).',
       );
     }
+    if (dto.destinationMode === 'PUBLIC_POST' && dto.landingPostUrl) {
+      let postUrl: URL;
+      try {
+        postUrl = new URL(dto.landingPostUrl);
+      } catch {
+        throw new BadRequestException('Вкажіть коректне посилання на допис у Telegram.');
+      }
+      if (postUrl.protocol !== 'https:' || postUrl.hostname.toLowerCase() !== 't.me') {
+        throw new BadRequestException('Посилання на допис має вести на https://t.me/.');
+      }
+    }
 
     const slug = generateSlug(10);
     const link = await this.prisma.trackingLink.create({
@@ -333,7 +344,7 @@ export class TrackingService {
   }
 
   getEmbedScript() {
-    return `(function(){var s=document.currentScript;var slug=s&&s.getAttribute("data-slug");var app=(s&&s.getAttribute("data-app-url"))||"";if(!slug||!app)return;function bind(){document.querySelectorAll('a[href*="t.me/"]').forEach(function(a){if(a.dataset.ctg)return;a.dataset.ctg="1";a.addEventListener("click",function(e){e.preventDefault();var q=new URLSearchParams(location.search);var u=app.replace(/\\/$/,"")+"/l/"+slug+(q.toString()?"?"+q:"");location.href=u;});});}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bind);else bind();})();`;
+    return `(function(){var s=document.currentScript;var slug=s&&s.getAttribute("data-slug");var app=(s&&s.getAttribute("data-app-url"))||"";var path=(s&&s.getAttribute("data-path"))||("/l/"+slug);if(!slug||!app)return;function bind(root){(root||document).querySelectorAll('a[href*="t.me/"]').forEach(function(a){if(a.dataset.ctg)return;a.dataset.ctg="1";a.addEventListener("click",function(e){e.preventDefault();var original=a.href;var q=new URLSearchParams(location.search);q.set("ctg_fallback",original);var u=app.replace(/\\/$/,"")+path+(q.toString()?"?"+q:"");location.href=u;});});}function start(){bind(document);if(window.MutationObserver)new MutationObserver(function(){bind(document);}).observe(document.documentElement,{childList:true,subtree:true});}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();})();`;
   }
 
   async getEmbedSnippet(workspaceId: string, slug: string) {
@@ -344,13 +355,14 @@ export class TrackingService {
     if (!link) throw new NotFoundException('Tracking link not found');
 
     const appUrl = resolveFrontendUrl();
+    const publicPath = getPublicLinkPath(link.linkMode as LinkMode, link.slug);
 
     return {
       slug: link.slug,
       channelTitle: link.channel.title,
       appUrl,
-      scriptTag: `<script src="${appUrl}/cleartg.js" data-slug="${link.slug}" data-app-url="${appUrl}" defer></script>`,
-      directLink: `${appUrl}/l/${link.slug}`,
+      scriptTag: `<script src="${appUrl}/cleartg.js" data-slug="${link.slug}" data-app-url="${appUrl}" data-path="${publicPath}" defer></script>`,
+      directLink: `${appUrl}${publicPath}`,
       hint: 'Вставте скрипт перед </body> на Tilda, Taplink, WordPress або іншому лендингу. Посилання t.me/ будуть вести через tracking.',
     };
   }

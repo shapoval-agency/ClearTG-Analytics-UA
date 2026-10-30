@@ -23,6 +23,7 @@ export interface ChannelStatusView {
 export interface ChannelStatusInput {
   isActive: boolean;
   botIsAdmin: boolean;
+  botCanInviteUsers: boolean;
 }
 
 /**
@@ -45,6 +46,16 @@ export function deriveChannelStatus(channel: ChannelStatusInput): ChannelStatusV
       label: 'Потребує уваги',
       meaning:
         'Бот не адміністратор каналу — Telegram не повідомляє нам про підписки й відписки.',
+      tone: 'warn',
+    };
+  }
+
+  if (!channel.botCanInviteUsers) {
+    return {
+      status: 'attention',
+      label: 'Потребує уваги',
+      meaning:
+        'Бот адміністратор, але без права «Додавання учасників». Точне джерело підписки не визначатиметься.',
       tone: 'warn',
     };
   }
@@ -77,7 +88,13 @@ export function deriveStatusFromBotCheck(
   check: BotStatusResponse,
   isActive: boolean,
 ): ChannelStatusView {
-  if (!isActive) return deriveChannelStatus({ isActive: false, botIsAdmin: check.isAdmin });
+  if (!isActive) {
+    return deriveChannelStatus({
+      isActive: false,
+      botIsAdmin: check.isAdmin,
+      botCanInviteUsers: check.canInviteUsers,
+    });
+  }
 
   if (!check.isAdmin) {
     return {

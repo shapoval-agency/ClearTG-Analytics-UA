@@ -108,6 +108,8 @@ model Channel {
   username        String?
   isActive        Boolean  @default(true) @map("is_active")
   botIsAdmin      Boolean  @default(false) @map("bot_is_admin")
+  botCanInviteUsers Boolean @default(false) @map("bot_can_invite_users")
+  botStatusCheckedAt DateTime? @map("bot_status_checked_at")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -409,6 +411,7 @@ model MembershipEvent {
 
   @@index([workspaceId, channelId, occurredAt])
   @@index([telegramUserId, channelId])
+  @@unique([workspaceId, rawUpdateId])
   @@map("membership_events")
 }
 

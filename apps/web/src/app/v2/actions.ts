@@ -203,7 +203,10 @@ export async function createTrackingLinkV2Action(data: {
   utmMedium?: string;
   utmCampaign?: string;
   utmContent?: string;
+  utmTerm?: string;
   creativeTag?: string;
+  destinationMode?: 'INVITE_LINK' | 'PUBLIC_POST';
+  landingPostUrl?: string;
 }) {
   const headers = await channelHeaders(true);
   if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', link: null };
@@ -211,7 +214,8 @@ export async function createTrackingLinkV2Action(data: {
   // Порожні рядки не відправляємо — інакше в БД осядуть порожні мітки.
   const payload: Record<string, string> = { channelId: data.channelId };
   for (const key of [
-    'campaignId', 'name', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'creativeTag',
+    'campaignId', 'name', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm',
+    'creativeTag', 'destinationMode', 'landingPostUrl',
   ] as const) {
     const value = data[key]?.trim();
     if (value) payload[key] = value;

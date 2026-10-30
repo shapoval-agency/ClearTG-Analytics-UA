@@ -120,10 +120,17 @@ export class ChannelService {
     if (!channel) throw new BadRequestException('Channel not found');
 
     const permissions = await this.telegram.getBotPermissions(channel.telegramChatId);
-    if (permissions.isAdmin !== channel.botIsAdmin) {
+    if (
+      permissions.isAdmin !== channel.botIsAdmin ||
+      permissions.canInviteUsers !== channel.botCanInviteUsers
+    ) {
       await this.prisma.channel.update({
         where: { id: channel.id },
-        data: { botIsAdmin: permissions.isAdmin },
+        data: {
+          botIsAdmin: permissions.isAdmin,
+          botCanInviteUsers: permissions.canInviteUsers,
+          botStatusCheckedAt: new Date(),
+        },
       });
     }
     return { channelId: channel.id, title: channel.title, ...permissions };

@@ -61,6 +61,24 @@ export function LinkRow({ row }: { row: LinkRowData }) {
         <p className="text-sm text-slate-500 mt-2">{row.marks.join(' · ')}</p>
       )}
 
+      {row.embedScript && (
+        <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-slate-700">
+            Код для сайту
+          </summary>
+          <p className="mt-2 text-xs text-slate-500">
+            Додайте код один раз на сторінку. Він замінить посилання на Telegram і збереже
+            мітки та початкову адресу як резервний перехід.
+          </p>
+          <code className="mt-2 block break-all rounded bg-slate-900 p-3 text-xs text-slate-100">
+            {row.embedScript}
+          </code>
+          <div className="mt-2">
+            <CopyButton value={row.embedScript} label="Копіювати код" />
+          </div>
+        </details>
+      )}
+
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-sm text-slate-400">
         {/* clicks === null для запрошувальних: Telegram не рахує кліки, нуль був би брехнею */}
         {row.clicks !== null && <span>{row.clicks} кліків</span>}

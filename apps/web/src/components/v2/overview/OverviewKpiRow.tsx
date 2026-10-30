@@ -31,6 +31,8 @@ export function OverviewKpiRow({ overview }: { overview: DashboardOverview }) {
           <span className="text-slate-500">Баланс подій:</span>
           {overview.dataIntegrity.ok ? (
             <Badge tone="ok">сходиться</Badge>
+          ) : overview.dataIntegrity.extra > 0 ? (
+            <Badge tone="error">{overview.dataIntegrity.extra} зайвих атрибуцій</Badge>
           ) : (
             <Badge tone="error">{overview.dataIntegrity.missing} підписок без визначеного джерела</Badge>
           )}

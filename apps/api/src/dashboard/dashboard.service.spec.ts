@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { DashboardService } from './dashboard.service';
+import { buildUnknownSourceMonitor, DashboardService } from './dashboard.service';
 
 /**
  * Юніт-тести на DashboardService — без бази, Prisma підмінена фейками
@@ -296,7 +296,7 @@ describe('DashboardService.getOverview', () => {
     expect(overview.clicks).toBe(10);
     expect(overview.reached).toBe(6);
     expect(overview.reachRate).toBeCloseTo(0.6);
-    expect(overview.dataIntegrity).toEqual({ subscribers: 5, attributed: 5, missing: 0, ok: true });
+    expect(overview.dataIntegrity).toEqual({ subscribers: 5, attributed: 5, missing: 0, extra: 0, ok: true });
   });
 
   it('старий виклик з одним аргументом (без opts) досі працює — адитивність', async () => {
@@ -306,5 +306,49 @@ describe('DashboardService.getOverview', () => {
     const service = new DashboardService(prisma as never, attribution as never, conversion as never);
 
     await expect(service.getOverview('ws_1')).resolves.toMatchObject({ clicks: 1, subscribers: 1 });
+  });
+});
+
+describe('buildUnknownSourceMonitor', () => {
+  it('сигналізує, коли частка невизначеного джерела зросла на 10+ п.п. при достатній вибірці', () => {
+    const result = buildUnknownSourceMonitor(
+      [{ type: 'ORGANIC', count: 3 }, { type: 'EXACT_CLICK_INVITE', count: 7 }],
+      [{ type: 'UNKNOWN', count: 1 }, { type: 'EXACT_CLICK_INVITE', count: 9 }],
+    );
+
+    expect(result.current.share).toBeCloseTo(0.3);
+    expect(result.previous.share).toBeCloseTo(0.1);
+    expect(result.change).toBeCloseTo(0.2);
+    expect(result.alert).toBe(true);
+  });
+
+  it('не здіймає тривогу на вибірці менше 5 підписок', () => {
+    const result = buildUnknownSourceMonitor(
+      [{ type: 'UNKNOWN', count: 4 }],
+      [{ type: 'EXACT_CLICK_INVITE', count: 4 }],
+    );
+    expect(result.alert).toBe(false);
+  });
+});
+
+describe('DashboardService.exportReportsCsv', () => {
+  it('повертає Excel-сумісний CSV з BOM, кирилицею та повним набором UTM', async () => {
+    const service = new DashboardService({} as never, {} as never, {} as never);
+    vi.spyOn(service, 'getCampaignReports').mockResolvedValue([]);
+    vi.spyOn(service, 'getTrackingLinkReports').mockResolvedValue([{
+      id: 'link_1', slug: 'promo', name: 'Осіння кампанія', campaignName: 'Запуск',
+      channelTitle: 'Новини', clicks: 10, reached: 8, reachRate: 0.8, uniqueClickers: 7,
+      subscribers: 3, unsubscribes: 1, conversionRate: 0.3, autoRedirect: true,
+      utmSource: 'meta', utmMedium: 'cpc', utmCampaign: 'осінь', utmContent: 'відео',
+      utmTerm: 'аналітика', creativeTag: 'синій', postNumber: 42, landingPostUrl: null,
+    }]);
+
+    const csv = await service.exportReportsCsv('ws_1', { channelId: 'ch_1' });
+
+    expect(csv.startsWith('\uFEFF')).toBe(true);
+    expect(csv).toContain('"Осіння кампанія"');
+    expect(csv).toContain('"utm_term"');
+    expect(csv).toContain('"аналітика"');
+    expect(csv).toContain('"синій"');
   });
 });

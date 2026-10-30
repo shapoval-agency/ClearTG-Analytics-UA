@@ -32,6 +32,8 @@ export interface ResolvedPeriod {
   label: string;
   from?: string;
   to?: string;
+  previousFrom?: string;
+  previousTo?: string;
 }
 
 /** `undefined`/невідоме значення → 'all', той самий безпечний дефолт, що й на бекенді без параметрів. */
@@ -41,13 +43,34 @@ export function resolvePeriod(period: string | undefined): ResolvedPeriod {
 
   if (value === 'today') {
     const today = kyivDateOffset(0);
-    return { value, label, from: today, to: today };
+    return {
+      value,
+      label,
+      from: today,
+      to: today,
+      previousFrom: kyivDateOffset(1),
+      previousTo: kyivDateOffset(1),
+    };
   }
   if (value === '7d') {
-    return { value, label, from: kyivDateOffset(6), to: kyivDateOffset(0) };
+    return {
+      value,
+      label,
+      from: kyivDateOffset(6),
+      to: kyivDateOffset(0),
+      previousFrom: kyivDateOffset(13),
+      previousTo: kyivDateOffset(7),
+    };
   }
   if (value === '30d') {
-    return { value, label, from: kyivDateOffset(29), to: kyivDateOffset(0) };
+    return {
+      value,
+      label,
+      from: kyivDateOffset(29),
+      to: kyivDateOffset(0),
+      previousFrom: kyivDateOffset(59),
+      previousTo: kyivDateOffset(30),
+    };
   }
   return { value, label };
 }

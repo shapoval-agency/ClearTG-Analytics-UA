@@ -61,6 +61,21 @@ export class DashboardController {
   }
 
   @RequiresWorkspace()
+  @Get('reports/export.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  async exportReports(
+    @WorkspaceId() workspaceId: string,
+    @Res({ passthrough: true }) reply: Reply,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+  ) {
+    const csv = await this.dashboard.exportReportsCsv(workspaceId, { from, to, channelId });
+    reply.header('Content-Disposition', 'attachment; filename="cleartg-report.csv"');
+    return csv;
+  }
+
+  @RequiresWorkspace()
   @Get('subscribers')
   subscriberFeed(
     @WorkspaceId() workspaceId: string,

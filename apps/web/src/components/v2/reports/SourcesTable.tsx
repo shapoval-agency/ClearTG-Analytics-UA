@@ -19,9 +19,11 @@ import type { CampaignReportRow } from '@/lib/api';
 export function SourcesTable({
   rows,
   unattributedSubscribers,
+  totalSubscribers,
 }: {
   rows: CampaignReportRow[];
   unattributedSubscribers: number;
+  totalSubscribers: number;
 }) {
   const sorted = [...rows].sort((a, b) => b.clicks - a.clicks);
 
@@ -44,13 +46,15 @@ export function SourcesTable({
   return (
     <Card title="Джерела" hint="Що приводить підписників, а що просто витрачає бюджет">
       <div className="overflow-x-auto -mx-5">
-        <table className="w-full text-sm min-w-[520px]">
+        <table className="w-full text-sm min-w-[720px]">
           <thead>
             <tr className="text-left text-slate-500 border-b border-slate-100">
               <th className="font-medium py-2 px-5">Кампанія</th>
               <th className="font-medium py-2 px-3 text-right">Кліки</th>
               <th className="font-medium py-2 px-3 text-right">Підписки</th>
               <th className="font-medium py-2 px-3 text-right">Відписки</th>
+              <th className="font-medium py-2 px-3 text-right">Залишилось</th>
+              <th className="font-medium py-2 px-3 text-right">Частка</th>
               <th className="font-medium py-2 px-3 text-right">Конверсія</th>
             </tr>
           </thead>
@@ -64,6 +68,12 @@ export function SourcesTable({
                 <td className="py-2.5 px-3 text-right tabular-nums">{row.clicks}</td>
                 <td className="py-2.5 px-3 text-right tabular-nums">{row.subscribers}</td>
                 <td className="py-2.5 px-3 text-right tabular-nums">{row.unsubscribes}</td>
+                <td className="py-2.5 px-3 text-right tabular-nums">
+                  {row.subscribers - row.unsubscribes}
+                </td>
+                <td className="py-2.5 px-3 text-right tabular-nums">
+                  {totalSubscribers > 0 ? formatPercentUk(row.subscribers / totalSubscribers) : '—'}
+                </td>
                 <td className="py-2.5 px-3 text-right tabular-nums">
                   {row.clicks > 0 ? formatPercentUk(row.conversionRate) : '—'}
                 </td>
@@ -82,6 +92,12 @@ export function SourcesTable({
                   {unattributedSubscribers}
                 </td>
                 <td className="py-2.5 px-3 text-right text-slate-300">—</td>
+                <td className="py-2.5 px-3 text-right tabular-nums text-slate-500">
+                  {unattributedSubscribers}
+                </td>
+                <td className="py-2.5 px-3 text-right tabular-nums text-slate-500">
+                  {totalSubscribers > 0 ? formatPercentUk(unattributedSubscribers / totalSubscribers) : '—'}
+                </td>
                 <td className="py-2.5 px-3 text-right text-slate-300">—</td>
               </tr>
             )}

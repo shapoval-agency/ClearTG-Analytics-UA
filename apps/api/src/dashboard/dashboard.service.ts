@@ -12,6 +12,33 @@ export interface ReportFilterOpts {
   channelId?: string;
 }
 
+type AttributionStat = { type: string; count: number };
+
+export function buildUnknownSourceMonitor(
+  current: AttributionStat[],
+  previous: AttributionStat[],
+) {
+  const summarize = (rows: AttributionStat[]) => {
+    const total = rows.reduce((sum, row) => sum + row.count, 0);
+    const unknown = rows
+      .filter((row) => row.type === 'ORGANIC' || row.type === 'UNKNOWN')
+      .reduce((sum, row) => sum + row.count, 0);
+    return { total, unknown, share: total > 0 ? unknown / total : 0 };
+  };
+  const currentSummary = summarize(current);
+  const previousSummary = summarize(previous);
+  const change = currentSummary.share - previousSummary.share;
+
+  return {
+    current: currentSummary,
+    previous: previousSummary,
+    change,
+    // Невеликі вибірки надто шумні. Сигналізуємо лише від 5 підписок і
+    // при зростанні частки невизначеного джерела щонайменше на 10 п.п.
+    alert: currentSummary.total >= 5 && change >= 0.1,
+  };
+}
+
 @Injectable()
 export class DashboardService {
   constructor(
@@ -51,7 +78,20 @@ export class DashboardService {
     if (channelId) unsubscribeWhere.channelId = channelId;
     if (range) unsubscribeWhere.occurredAt = range;
 
-    const [clicks, reached, subscribers, unsubscribes, attributions, deliveryStats] = await Promise.all([
+    const today = new Date();
+    const dateLabel = (daysAgo: number) =>
+      kyivDayStart(today, daysAgo).toLocaleDateString('en-CA', { timeZone: 'Europe/Kyiv' });
+
+    const [
+      clicks,
+      reached,
+      subscribers,
+      unsubscribes,
+      attributions,
+      deliveryStats,
+      unknownCurrent,
+      unknownPrevious,
+    ] = await Promise.all([
       this.prisma.clickEvent.count({ where: clickWhere }),
       // S2-12: частка кліків, що дійсно дійшли до Telegram (ClickEvent.telegramOpenedAt).
       this.prisma.clickEvent.count({ where: { ...clickWhere, telegramOpenedAt: { not: null } } }),
@@ -59,6 +99,16 @@ export class DashboardService {
       this.prisma.unsubscribeEvent.count({ where: unsubscribeWhere }),
       this.attribution.getAttributionStats(workspaceId, { channelId, from: opts.from, to: opts.to }),
       this.conversion.getDeliveryStats(workspaceId),
+      this.attribution.getAttributionStats(workspaceId, {
+        channelId,
+        from: dateLabel(6),
+        to: dateLabel(0),
+      }),
+      this.attribution.getAttributionStats(workspaceId, {
+        channelId,
+        from: dateLabel(13),
+        to: dateLabel(7),
+      }),
     ]);
 
     const clickToSubscribeRate = this.safeDivide(subscribers, clicks);
@@ -92,7 +142,8 @@ export class DashboardService {
       subscribers,
       attributed: attributedCount,
       missing: Math.max(0, subscribers - attributedCount),
-      ok: attributedCount >= subscribers,
+      extra: Math.max(0, attributedCount - subscribers),
+      ok: attributedCount === subscribers,
     };
 
     return {
@@ -106,6 +157,7 @@ export class DashboardService {
       retention,
       attributions,
       dataIntegrity,
+      unknownSourceMonitor: buildUnknownSourceMonitor(unknownCurrent, unknownPrevious),
       deliveryStats,
     };
   }
@@ -314,6 +366,14 @@ export class DashboardService {
           unsubscribes,
           conversionRate: this.safeDivide(subscribers, clicks),
           autoRedirect: link.autoRedirect,
+          utmSource: link.utmSource,
+          utmMedium: link.utmMedium,
+          utmCampaign: link.utmCampaign,
+          utmContent: link.utmContent,
+          utmTerm: link.utmTerm,
+          creativeTag: link.creativeTag,
+          postNumber: link.postNumber,
+          landingPostUrl: link.landingPostUrl,
         };
       }),
     );
@@ -665,6 +725,45 @@ export class DashboardService {
       ].join(','),
     );
     return [header, ...lines].join('\n');
+  }
+
+  async exportReportsCsv(workspaceId: string, opts: ReportFilterOpts = {}): Promise<string> {
+    const [campaigns, links] = await Promise.all([
+      this.getCampaignReports(workspaceId, opts),
+      this.getTrackingLinkReports(workspaceId, opts),
+    ]);
+
+    const escape = (value: unknown) => {
+      const text = value == null ? '' : String(value);
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+    const header = [
+      'Тип', 'Канал', 'Джерело', 'Кампанія', 'Посилання', 'Кліки', 'Унікальні кліки',
+      'Дійшли до Telegram', 'Підписки', 'Відписки', 'Залишилось', 'Конверсія',
+      'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+      'Креатив', 'Допис',
+    ];
+    const rows: unknown[][] = [header];
+
+    for (const row of campaigns) {
+      rows.push([
+        'Кампанія', row.channelTitle, row.adPlatform, row.name, '', row.clicks,
+        row.uniqueClickers, row.reached, row.subscribers, row.unsubscribes,
+        row.subscribers - row.unsubscribes, row.conversionRate, '', '', '', '', '', '', '',
+      ]);
+    }
+    for (const row of links) {
+      rows.push([
+        'Посилання', row.channelTitle, '', row.campaignName, row.name ?? `/${row.slug}`,
+        row.clicks, row.uniqueClickers, row.reached, row.subscribers, row.unsubscribes,
+        row.subscribers - row.unsubscribes, row.conversionRate, row.utmSource, row.utmMedium,
+        row.utmCampaign, row.utmContent, row.utmTerm, row.creativeTag,
+        row.landingPostUrl ?? row.postNumber,
+      ]);
+    }
+
+    // BOM потрібен Excel, щоб без ручного імпорту правильно відкрити українську кирилицю.
+    return `\uFEFF${rows.map((row) => row.map(escape).join(',')).join('\n')}`;
   }
 
   async getDailyDigest(workspaceId: string, date?: string) {
