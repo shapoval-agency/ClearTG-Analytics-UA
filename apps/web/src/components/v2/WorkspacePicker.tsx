@@ -2,6 +2,7 @@
 
 import { useTransition } from 'react';
 import { switchWorkspaceV2Action } from '@/app/v2/actions';
+import { CustomSelect } from '@/components/v2/CustomSelect';
 import type { AuthMe } from '@/lib/api';
 
 /**
@@ -39,26 +40,22 @@ export function WorkspacePicker({
       <label className="sr-only" htmlFor="v2-workspace-picker">
         Кабінет клієнта
       </label>
-      <select
+      <CustomSelect
         id="v2-workspace-picker"
         disabled={pending}
         value={activeWorkspaceId ?? me.workspaces[0]?.id ?? ''}
-        onChange={(e) => {
-          const id = e.target.value;
+        onChange={(id) => {
           if (id && id !== activeWorkspaceId) {
             startTransition(() => switchWorkspaceV2Action(id));
           }
         }}
-        className={onDark
-          ? 'w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-medium text-white outline-none transition focus:border-white/30 focus:ring-2 focus:ring-white/20'
-          : 'w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700'}
-      >
-        {me.workspaces.map((ws) => (
-          <option key={ws.id} value={ws.id}>
-            {ws.name} ({ws.role})
-          </option>
-        ))}
-      </select>
+        variant={onDark ? 'dark' : 'light'}
+        buttonClassName="min-h-10 py-2 text-xs"
+        options={me.workspaces.map((workspace) => ({
+          value: workspace.id,
+          label: `${workspace.name} · ${workspace.role}`,
+        }))}
+      />
     </div>
   );
 }

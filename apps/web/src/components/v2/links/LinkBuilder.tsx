@@ -15,6 +15,7 @@ import {
   type LinkKind,
   type TrafficSource,
 } from './link-kind';
+import { CustomSelect } from '@/components/v2/CustomSelect';
 
 export interface BuilderChannel {
   id: string;
@@ -210,39 +211,40 @@ export function LinkBuilder({
       {channels.length > 1 && (
         <div className="mb-4">
           <label className={labelCls} htmlFor="v2-link-channel">Канал</label>
-          <select
+          <CustomSelect
             id="v2-link-channel"
-            className={field}
             value={channelId}
-            onChange={(e) => { setChannelId(e.target.value); setCampaignId(''); }}
-          >
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>{c.title}</option>
-            ))}
-          </select>
+            onChange={(value) => { setChannelId(value); setCampaignId(''); }}
+            options={channels.map((channelOption) => ({
+              value: channelOption.id,
+              label: channelOption.title,
+            }))}
+          />
         </div>
       )}
 
       {/* 2. Джерело трафіку */}
       <div className="mb-4">
         <label className={labelCls} htmlFor="v2-link-source">Джерело трафіку</label>
-        <select
+        <CustomSelect
           id="v2-link-source"
-          className={field}
           value={source}
-          onChange={(e) => {
-            setSource(e.target.value as TrafficSource);
+          onChange={(value) => {
+            setSource(value as TrafficSource | '');
             setCampaignId('');
             setKind('tracking');
             setResult(null);
             setError(null);
           }}
-        >
-          <option value="">Оберіть джерело…</option>
-          {TRAFFIC_SOURCES.map((s) => (
-            <option key={s.value} value={s.value}>{s.label}</option>
-          ))}
-        </select>
+          placeholder="Оберіть джерело…"
+          options={[
+            { value: '', label: 'Оберіть джерело…' },
+            ...TRAFFIC_SOURCES.map((sourceOption) => ({
+              value: sourceOption.value,
+              label: sourceOption.label,
+            })),
+          ]}
+        />
       </div>
 
       {/* 3. Назва */}
@@ -298,19 +300,23 @@ export function LinkBuilder({
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            <select
+            <CustomSelect
               id="v2-link-campaign"
-              className={`${field} flex-1 min-w-[200px]`}
+              className="min-w-[200px] flex-1"
               value={campaignId}
-              onChange={(e) => setCampaignId(e.target.value)}
-            >
-              <option value="">
-                {requiresCampaign(kind) ? 'Оберіть кампанію…' : 'Без кампанії'}
-              </option>
-              {availableCampaigns.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+              onChange={setCampaignId}
+              placeholder={requiresCampaign(kind) ? 'Оберіть кампанію…' : 'Без кампанії'}
+              options={[
+                {
+                  value: '',
+                  label: requiresCampaign(kind) ? 'Оберіть кампанію…' : 'Без кампанії',
+                },
+                ...availableCampaigns.map((campaign) => ({
+                  value: campaign.id,
+                  label: campaign.name,
+                })),
+              ]}
+            />
             <button
               type="button"
               disabled={!source}

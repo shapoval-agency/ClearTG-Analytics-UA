@@ -3,6 +3,7 @@
 import { useTransition } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import clsx from 'clsx';
+import { CustomSelect } from '@/components/v2/CustomSelect';
 import { PERIOD_OPTIONS, type ReportPeriod } from './period';
 
 export interface ReportFilterChannel {
@@ -68,25 +69,24 @@ export function ReportFilters({
       </div>
 
       {channels.length > 1 && (
-        <div className="sm:ml-auto">
+        <div className="sm:ml-auto sm:min-w-60">
           <label className="sr-only" htmlFor="v2-reports-channel">
             Канал
           </label>
-          <select
+          <CustomSelect
             id="v2-reports-channel"
             disabled={pending}
             value={channelId ?? ''}
-            onChange={(e) => navigate({ period, channelId: e.target.value || undefined })}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 sm:w-auto"
-          >
-            <option value="">Усі канали</option>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
-                {!c.isActive ? ' (архів)' : ''}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => navigate({ period, channelId: value || undefined })}
+            align="end"
+            options={[
+              { value: '', label: 'Усі канали' },
+              ...channels.map((channel) => ({
+                value: channel.id,
+                label: `${channel.title}${!channel.isActive ? ' (архів)' : ''}`,
+              })),
+            ]}
+          />
         </div>
       )}
     </div>
