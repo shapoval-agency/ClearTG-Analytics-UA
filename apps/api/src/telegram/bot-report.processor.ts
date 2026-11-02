@@ -16,6 +16,6 @@ export class BotReportProcessor extends WorkerHost {
   async process(_job: Job) {
     const bot = this.telegram.getBot();
     if (!bot) return;
-    await this.botAdmin.sendDailyReportsToAll(bot);
+    await this.botAdmin.sendDueDigestReports(bot);
   }
 }

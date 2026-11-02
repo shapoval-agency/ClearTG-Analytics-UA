@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildUnknownSourceMonitor, buildUnsubscribeTiming, DashboardService } from './dashboard.service';
+import {
+  buildOverviewInsights,
+  buildUnknownSourceMonitor,
+  buildUnsubscribeTiming,
+  DashboardService,
+} from './dashboard.service';
 
 /**
  * Юніт-тести на DashboardService — без бази, Prisma підмінена фейками
@@ -307,10 +312,12 @@ describe('DashboardService.getOverview', () => {
       args?.where && 'telegramOpenedAt' in args.where ? reached : clicks,
     );
     return {
-      clickEvent: { count: clickCount },
+      clickEvent: { count: clickCount, groupBy: vi.fn().mockResolvedValue([]) },
       membershipEvent: { count: vi.fn().mockResolvedValue(subscribers) },
       unsubscribeEvent: { count: vi.fn().mockResolvedValue(unsubscribes) },
       subscriberProfile: { count: vi.fn().mockResolvedValue(activeSubscribers), findMany: vi.fn().mockResolvedValue([]) },
+      campaign: { findMany: vi.fn().mockResolvedValue([]) },
+      attribution: { groupBy: vi.fn().mockResolvedValue([]) },
     };
   }
 
@@ -373,6 +380,55 @@ describe('buildUnknownSourceMonitor', () => {
       [{ type: 'EXACT_CLICK_INVITE', count: 4 }],
     );
     expect(result.alert).toBe(false);
+  });
+});
+
+describe('buildOverviewInsights', () => {
+  const quietUnknown = buildUnknownSourceMonitor(
+    [{ type: 'EXACT_CLICK_INVITE', count: 10 }],
+    [{ type: 'EXACT_CLICK_INVITE', count: 10 }],
+  );
+
+  it('показує сплеск відписок лише на помітній зміні', () => {
+    const result = buildOverviewInsights({
+      unknownMonitor: quietUnknown,
+      currentUnsubscribes: 8,
+      previousUnsubscribes: 3,
+      campaigns: [],
+      currentClicks: [], previousClicks: [], currentSubscriptions: [], previousSubscriptions: [],
+    });
+    expect(result).toContainEqual(expect.objectContaining({ kind: 'unsubscribe-spike' }));
+  });
+
+  it('знаходить найбільше падіння конверсії джерела на достатній вибірці', () => {
+    const result = buildOverviewInsights({
+      unknownMonitor: quietUnknown,
+      currentUnsubscribes: 0,
+      previousUnsubscribes: 0,
+      campaigns: [{ id: 'campaign_1', name: 'Meta / Video' }],
+      currentClicks: [{ campaignId: 'campaign_1', _count: 20 }],
+      previousClicks: [{ campaignId: 'campaign_1', _count: 20 }],
+      currentSubscriptions: [{ campaignId: 'campaign_1', _count: 2 }],
+      previousSubscriptions: [{ campaignId: 'campaign_1', _count: 6 }],
+    });
+    expect(result).toContainEqual(expect.objectContaining({
+      kind: 'source-drop',
+      title: 'Просіла конверсія «Meta / Video»',
+    }));
+  });
+
+  it('не створює шум на малих вибірках', () => {
+    const result = buildOverviewInsights({
+      unknownMonitor: quietUnknown,
+      currentUnsubscribes: 2,
+      previousUnsubscribes: 0,
+      campaigns: [{ id: 'campaign_1', name: 'Small' }],
+      currentClicks: [{ campaignId: 'campaign_1', _count: 3 }],
+      previousClicks: [{ campaignId: 'campaign_1', _count: 3 }],
+      currentSubscriptions: [],
+      previousSubscriptions: [{ campaignId: 'campaign_1', _count: 2 }],
+    });
+    expect(result).toEqual([]);
   });
 });
 

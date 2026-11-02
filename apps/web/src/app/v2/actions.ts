@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { setWorkspace } from '@/lib/session';
 import { getApiOrigin } from '@/lib/api-origin';
+import type { DigestSettings, IntegrationDiagnostics } from '@/lib/api';
 
 const API_URL = getApiOrigin();
 
@@ -126,6 +127,52 @@ export async function checkChannelStatusV2Action(id: string) {
 
   revalidatePath('/v2/channels');
   return { error: null, check };
+}
+
+/** S2-17: одна явна дія запускає живу перевірку всіх доступів і посилань. */
+export async function runIntegrationDiagnosticsV2Action() {
+  const headers = await channelHeaders();
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', diagnostics: null };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/channels/diagnostics`, {
+      method: 'POST',
+      headers,
+      cache: 'no-store',
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.', diagnostics: null };
+  }
+  if (!res.ok) {
+    return { error: await readError(res, 'Не вдалося виконати діагностику'), diagnostics: null };
+  }
+  const diagnostics = (await res.json()) as IntegrationDiagnostics;
+  revalidatePath('/v2/channels');
+  return { error: null, diagnostics };
+}
+
+/** S2-25: зберігає персональний розклад Telegram-зведення для workspace. */
+export async function updateDigestSettingsV2Action(data: Omit<DigestSettings, 'telegramLinked'>) {
+  const headers = await channelHeaders(true);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', settings: null };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/telegram/digest-settings`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data),
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.', settings: null };
+  }
+  if (!res.ok) {
+    return { error: await readError(res, 'Не вдалося зберегти налаштування'), settings: null };
+  }
+  const settings = (await res.json()) as DigestSettings;
+  revalidatePath('/v2/channels');
+  return { error: null, settings };
 }
 
 /** Підключення каналу вручну — за @username або chat id. */

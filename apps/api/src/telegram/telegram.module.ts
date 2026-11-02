@@ -12,6 +12,7 @@ import { BotReportProcessor } from './bot-report.processor';
 import { AttributionModule } from '../attribution/attribution.module';
 import { ConversionModule } from '../conversion/conversion.module';
 import { LeadMagnetModule } from '../lead-magnet/lead-magnet.module';
+import { TelegramSettingsController } from './telegram-settings.controller';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { LeadMagnetModule } from '../lead-magnet/lead-magnet.module';
     forwardRef(() => ConversionModule),
     forwardRef(() => LeadMagnetModule),
   ],
-  controllers: [TelegramController, InviteLinkController],
+  controllers: [TelegramController, TelegramSettingsController, InviteLinkController],
   providers: [
     TelegramService,
     InviteLinkService,

@@ -84,12 +84,23 @@ enum WorkspaceRole {
   VIEWER
 }
 
+enum TelegramDigestFrequency {
+  DAILY
+  WEEKDAYS
+  WEEKLY
+}
+
 model WorkspaceMember {
-  id          String        @id @default(cuid())
-  workspaceId String        @map("workspace_id")
-  userId      String        @map("user_id")
-  role        WorkspaceRole @default(MEMBER)
-  createdAt   DateTime      @default(now()) @map("created_at")
+  id                       String                  @id @default(cuid())
+  workspaceId              String                  @map("workspace_id")
+  userId                   String                  @map("user_id")
+  role                     WorkspaceRole           @default(MEMBER)
+  telegramDigestEnabled    Boolean                 @default(false) @map("telegram_digest_enabled")
+  telegramDigestFrequency  TelegramDigestFrequency @default(DAILY) @map("telegram_digest_frequency")
+  telegramDigestHour       Int                     @default(9) @map("telegram_digest_hour")
+  telegramDigestChannelIds String[]                @default([]) @map("telegram_digest_channel_ids")
+  telegramDigestLastSentAt DateTime?               @map("telegram_digest_last_sent_at")
+  createdAt                DateTime                @default(now()) @map("created_at")
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)

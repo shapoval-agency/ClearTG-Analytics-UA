@@ -66,7 +66,53 @@ export interface DashboardOverview {
     change: number;
     alert: boolean;
   };
+  insights?: Array<{
+    id: string;
+    kind: 'unknown-growth' | 'unsubscribe-spike' | 'source-drop';
+    severity: 'warning' | 'critical';
+    title: string;
+    description: string;
+    href: string;
+  }>;
   deliveryStats: Array<{ status: string; count: number }>;
+}
+
+export interface IntegrationStatus {
+  overall: 'working' | 'attention' | 'not-configured';
+  channels: {
+    total: number;
+    active: number;
+    ready: number;
+    attention: number;
+    lastCheckedAt: string | null;
+  };
+  tracking: {
+    activeLinks: number;
+    revokedInviteLinks: number;
+    lastClickAt: string | null;
+    mechanism: 'tracking-links';
+  };
+  ads: { connected: string[] };
+}
+
+export interface IntegrationDiagnostics {
+  overall: 'working' | 'attention' | 'error';
+  checkedAt: string;
+  checks: Array<{
+    id: string;
+    label: string;
+    status: 'ok' | 'warning' | 'error' | 'info';
+    detail: string;
+    actionHref?: string;
+  }>;
+}
+
+export interface DigestSettings {
+  enabled: boolean;
+  frequency: 'DAILY' | 'WEEKDAYS' | 'WEEKLY';
+  hour: number;
+  channelIds: string[];
+  telegramLinked: boolean;
 }
 
 /** GET /api/dashboard/campaigns — розріз «Джерела» в /v2/reports. */

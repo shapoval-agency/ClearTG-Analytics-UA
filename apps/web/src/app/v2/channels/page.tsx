@@ -1,9 +1,11 @@
 import Link from 'next/link';
-import { api, AuthError } from '@/lib/api';
+import { api, AuthError, type DigestSettings, type IntegrationStatus } from '@/lib/api';
 import { PageHeader, ErrorState, DisconnectedState } from '@/components/v2/ui';
 import { ChannelCard, type ChannelListItem } from '@/components/v2/channels/ChannelCard';
 import { ConnectChannelPanel } from '@/components/v2/channels/ConnectChannelPanel';
 import type { BotStatusResponse } from '@/components/v2/channels/channel-status';
+import { IntegrationHealthPanel } from '@/components/v2/channels/IntegrationHealthPanel';
+import { DigestSettingsPanel } from '@/components/v2/channels/DigestSettingsPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,12 +51,22 @@ export default async function V2ChannelsPage() {
     process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.replace(/^@/, '') ?? 'cleartg_bot';
 
   let channels: ChannelListItem[] | null = null;
+  let integrationStatus: IntegrationStatus | null = null;
+  let digestSettings: DigestSettings | null = null;
   let failed = false;
   let sessionExpired = false;
 
   try {
     const storedChannels = await api<ChannelListItem[]>('/api/channels');
     channels = await hydrateLegacyBotPermissions(storedChannels);
+    // Нові S2 endpoints не повинні ламати базовий список під час rolling deploy,
+    // коли web уже оновився, а API ще збирається.
+    const [integrationResult, digestResult] = await Promise.allSettled([
+      api<IntegrationStatus>('/api/channels/integration-status'),
+      api<DigestSettings>('/api/telegram/digest-settings'),
+    ]);
+    if (integrationResult.status === 'fulfilled') integrationStatus = integrationResult.value;
+    if (digestResult.status === 'fulfilled') digestSettings = digestResult.value;
   } catch (err) {
     // middleware перекидає на /login лише коли cookie немає зовсім.
     // Протухлий токен доходить сюди — показуємо зрозумілий стан,
@@ -113,6 +125,8 @@ export default async function V2ChannelsPage() {
     return (
       <>
         {header}
+        <IntegrationHealthPanel status={integrationStatus} />
+        <DigestSettingsPanel initial={digestSettings} channels={list} />
         <ConnectChannelPanel botUsername={botUsername} variant="empty" />
       </>
     );
@@ -122,6 +136,9 @@ export default async function V2ChannelsPage() {
   return (
     <>
       {header}
+
+      <IntegrationHealthPanel status={integrationStatus} />
+      <DigestSettingsPanel initial={digestSettings} channels={list} />
 
       {active.length === 0 && (
         <div className="mb-6">

@@ -86,6 +86,90 @@ export function buildUnknownSourceMonitor(
   };
 }
 
+type CampaignPeriodCount = { campaignId: string | null; _count: number };
+
+/** S2-23: тільки статистично помітні зміни, без шуму на малих вибірках. */
+export function buildOverviewInsights(input: {
+  unknownMonitor: ReturnType<typeof buildUnknownSourceMonitor>;
+  currentUnsubscribes: number;
+  previousUnsubscribes: number;
+  campaigns: Array<{ id: string; name: string }>;
+  currentClicks: CampaignPeriodCount[];
+  previousClicks: CampaignPeriodCount[];
+  currentSubscriptions: CampaignPeriodCount[];
+  previousSubscriptions: CampaignPeriodCount[];
+}) {
+  const insights: Array<{
+    id: string;
+    kind: 'unknown-growth' | 'unsubscribe-spike' | 'source-drop';
+    severity: 'warning' | 'critical';
+    title: string;
+    description: string;
+    href: string;
+  }> = [];
+
+  if (input.unknownMonitor.alert) {
+    insights.push({
+      id: 'unknown-source-growth',
+      kind: 'unknown-growth',
+      severity: 'warning',
+      title: 'Зросла частка невідомих джерел',
+      description: `За 7 днів вона збільшилась на ${Math.round(input.unknownMonitor.change * 100)} п.п. Перевірте активні посилання та розмітку.`,
+      href: '/v2/reports?period=7d',
+    });
+  }
+
+  if (
+    input.currentUnsubscribes >= 5 &&
+    input.currentUnsubscribes >= input.previousUnsubscribes + 3 &&
+    (input.previousUnsubscribes === 0 || input.currentUnsubscribes >= input.previousUnsubscribes * 1.5)
+  ) {
+    insights.push({
+      id: 'unsubscribe-spike',
+      kind: 'unsubscribe-spike',
+      severity: 'critical',
+      title: 'Відписок стало помітно більше',
+      description: `${input.currentUnsubscribes} за останні 7 днів проти ${input.previousUnsubscribes} у попередні 7 днів.`,
+      href: '/v2/reports?period=7d',
+    });
+  }
+
+  const countMap = (rows: CampaignPeriodCount[]) =>
+    new Map(rows.filter((row) => row.campaignId).map((row) => [row.campaignId as string, row._count]));
+  const currentClicks = countMap(input.currentClicks);
+  const previousClicks = countMap(input.previousClicks);
+  const currentSubscriptions = countMap(input.currentSubscriptions);
+  const previousSubscriptions = countMap(input.previousSubscriptions);
+
+  const drops = input.campaigns.flatMap((campaign) => {
+    const clicksNow = currentClicks.get(campaign.id) ?? 0;
+    const clicksBefore = previousClicks.get(campaign.id) ?? 0;
+    const subsNow = currentSubscriptions.get(campaign.id) ?? 0;
+    const subsBefore = previousSubscriptions.get(campaign.id) ?? 0;
+    if (clicksNow < 10 || clicksBefore < 10 || subsBefore < 2) return [];
+    const rateNow = subsNow / clicksNow;
+    const rateBefore = subsBefore / clicksBefore;
+    const absoluteDrop = rateBefore - rateNow;
+    const relativeDrop = rateBefore > 0 ? absoluteDrop / rateBefore : 0;
+    if (absoluteDrop < 0.05 || relativeDrop < 0.3) return [];
+    return [{ campaign, rateNow, rateBefore, relativeDrop }];
+  }).sort((a, b) => b.relativeDrop - a.relativeDrop);
+
+  if (drops[0]) {
+    const drop = drops[0];
+    insights.push({
+      id: `source-drop-${drop.campaign.id}`,
+      kind: 'source-drop',
+      severity: 'warning',
+      title: `Просіла конверсія «${drop.campaign.name}»`,
+      description: `${Math.round(drop.rateBefore * 100)}% → ${Math.round(drop.rateNow * 100)}% за останні 7 днів.`,
+      href: '/v2/reports?period=7d',
+    });
+  }
+
+  return insights;
+}
+
 @Injectable()
 export class DashboardService {
   constructor(
@@ -128,6 +212,11 @@ export class DashboardService {
     const today = new Date();
     const dateLabel = (daysAgo: number) =>
       kyivDayStart(today, daysAgo).toLocaleDateString('en-CA', { timeZone: 'Europe/Kyiv' });
+    // Дві повні семиденки без поточного неповного дня — інакше ранковий
+    // трафік порівнювався б із повною добою та створював хибні «просадки».
+    const currentWeekRange = kyivDateRange(dateLabel(7), dateLabel(1));
+    const previousWeekRange = kyivDateRange(dateLabel(14), dateLabel(8));
+    const weeklyChannel = channelId ? { channelId } : {};
 
     const [
       clicks,
@@ -138,6 +227,13 @@ export class DashboardService {
       deliveryStats,
       unknownCurrent,
       unknownPrevious,
+      currentWeekUnsubscribes,
+      previousWeekUnsubscribes,
+      campaigns,
+      currentCampaignClicks,
+      previousCampaignClicks,
+      currentCampaignSubscriptions,
+      previousCampaignSubscriptions,
     ] = await Promise.all([
       this.prisma.clickEvent.count({ where: clickWhere }),
       // S2-12: частка кліків, що дійсно дійшли до Telegram (ClickEvent.telegramOpenedAt).
@@ -148,13 +244,69 @@ export class DashboardService {
       this.conversion.getDeliveryStats(workspaceId),
       this.attribution.getAttributionStats(workspaceId, {
         channelId,
-        from: dateLabel(6),
-        to: dateLabel(0),
+        from: dateLabel(7),
+        to: dateLabel(1),
       }),
       this.attribution.getAttributionStats(workspaceId, {
         channelId,
-        from: dateLabel(13),
-        to: dateLabel(7),
+        from: dateLabel(14),
+        to: dateLabel(8),
+      }),
+      this.prisma.unsubscribeEvent.count({
+        where: { workspaceId, ...weeklyChannel, ...(currentWeekRange ? { occurredAt: currentWeekRange } : {}) },
+      }),
+      this.prisma.unsubscribeEvent.count({
+        where: { workspaceId, ...weeklyChannel, ...(previousWeekRange ? { occurredAt: previousWeekRange } : {}) },
+      }),
+      this.prisma.campaign.findMany({
+        where: { workspaceId, ...(channelId ? { channelId } : {}) },
+        select: { id: true, name: true },
+      }),
+      this.prisma.clickEvent.groupBy({
+        by: ['campaignId'],
+        where: {
+          workspaceId,
+          campaignId: { not: null },
+          ...weeklyChannel,
+          ...(currentWeekRange ? { clickedAt: currentWeekRange } : {}),
+        },
+        _count: true,
+      }),
+      this.prisma.clickEvent.groupBy({
+        by: ['campaignId'],
+        where: {
+          workspaceId,
+          campaignId: { not: null },
+          ...weeklyChannel,
+          ...(previousWeekRange ? { clickedAt: previousWeekRange } : {}),
+        },
+        _count: true,
+      }),
+      this.prisma.attribution.groupBy({
+        by: ['campaignId'],
+        where: {
+          workspaceId,
+          campaignId: { not: null },
+          ...weeklyChannel,
+          membershipEvent: {
+            eventType: MembershipEventType.SUBSCRIBE,
+            ...(currentWeekRange ? { occurredAt: currentWeekRange } : {}),
+          },
+        },
+        _count: true,
+      }),
+      this.prisma.attribution.groupBy({
+        by: ['campaignId'],
+        where: {
+          workspaceId,
+          campaignId: { not: null },
+          ...weeklyChannel,
+          membershipEvent: {
+            eventType: MembershipEventType.SUBSCRIBE,
+            ...(previousWeekRange ? { occurredAt: previousWeekRange } : {}),
+          },
+        },
+        _count: true,
       }),
     ]);
 
@@ -193,6 +345,18 @@ export class DashboardService {
       ok: attributedCount === subscribers,
     };
 
+    const unknownSourceMonitor = buildUnknownSourceMonitor(unknownCurrent, unknownPrevious);
+    const insights = buildOverviewInsights({
+      unknownMonitor: unknownSourceMonitor,
+      currentUnsubscribes: currentWeekUnsubscribes,
+      previousUnsubscribes: previousWeekUnsubscribes,
+      campaigns,
+      currentClicks: currentCampaignClicks,
+      previousClicks: previousCampaignClicks,
+      currentSubscriptions: currentCampaignSubscriptions,
+      previousSubscriptions: previousCampaignSubscriptions,
+    });
+
     return {
       clicks,
       reached,
@@ -204,7 +368,8 @@ export class DashboardService {
       retention,
       attributions,
       dataIntegrity,
-      unknownSourceMonitor: buildUnknownSourceMonitor(unknownCurrent, unknownPrevious),
+      unknownSourceMonitor,
+      insights,
       deliveryStats,
     };
   }

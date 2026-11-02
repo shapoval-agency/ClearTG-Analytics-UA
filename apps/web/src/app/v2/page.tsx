@@ -16,6 +16,7 @@ import { OverviewKpiRow } from '@/components/v2/overview/OverviewKpiRow';
 import { ActiveChannelsBlock } from '@/components/v2/overview/ActiveChannelsBlock';
 import { RecentActivity, type ActivityItem } from '@/components/v2/overview/RecentActivity';
 import { AttributionQuality } from '@/components/v2/reports/AttributionQuality';
+import { InsightsPanel } from '@/components/v2/overview/InsightsPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -184,6 +185,7 @@ export default async function V2OverviewPage({
       ) : (
         <>
           <OverviewKpiRow overview={overview} />
+          <InsightsPanel insights={overview.insights ?? []} />
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.85fr)]">
             <ActiveChannelsBlock channels={channels} />
             <AttributionQuality overview={overview} compact />

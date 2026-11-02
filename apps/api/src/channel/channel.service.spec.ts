@@ -38,4 +38,35 @@ describe('ChannelService.getBotStatus', () => {
       },
     });
   });
+
+  it('оновлює час перевірки, навіть коли права не змінилися', async () => {
+    const update = vi.fn().mockResolvedValue(undefined);
+    const prisma = {
+      channel: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'ch_1',
+          title: 'Channel',
+          telegramChatId: '-1001',
+          botIsAdmin: true,
+          botCanInviteUsers: true,
+        }),
+        update,
+      },
+    };
+    const telegram = {
+      getBotPermissions: vi.fn().mockResolvedValue({
+        isAdmin: true,
+        canInviteUsers: true,
+        canManageChat: true,
+        issues: [],
+        ready: true,
+      }),
+    };
+
+    await new ChannelService(prisma as never, telegram as never).getBotStatus('ch_1', 'ws_1');
+
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ botStatusCheckedAt: expect.any(Date) }),
+    }));
+  });
 });

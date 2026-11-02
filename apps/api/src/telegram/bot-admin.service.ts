@@ -1,15 +1,81 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
-import { MembershipEventType, WorkspaceRole } from '@cleartg/database';
+import { MembershipEventType, TelegramDigestFrequency, WorkspaceRole } from '@cleartg/database';
 import type { Context } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import { tryPublicAppUrl } from '../common/public-app-url';
 import { formatRecentSubscribersList, formatChannelDigest, kyivDayStart, type DigestPersonRow } from '@cleartg/shared';
 
 const BIND_TTL_SEC = 60 * 60 * 24 * 7;
+
+type DigestSchedule = {
+  enabled: boolean;
+  frequency: 'DAILY' | 'WEEKDAYS' | 'WEEKLY';
+  hour: number;
+  lastSentAt: Date | null;
+};
+
+function kyivClock(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Kyiv',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hourCycle: 'h23',
+    weekday: 'short',
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? '';
+  return {
+    date: `${value('year')}-${value('month')}-${value('day')}`,
+    hour: Number(value('hour')),
+    weekday: value('weekday'),
+  };
+}
+
+/** Чиста функція: scheduler може запускатись щогодини без дублювання звітів. */
+export function isDigestDue(schedule: DigestSchedule, now: Date) {
+  if (!schedule.enabled) return false;
+  const current = kyivClock(now);
+  if (current.hour < schedule.hour) return false;
+  if (schedule.frequency === 'WEEKDAYS' && ['Sat', 'Sun'].includes(current.weekday)) return false;
+  if (schedule.frequency === 'WEEKLY' && current.weekday !== 'Mon') return false;
+  if (schedule.lastSentAt && kyivClock(schedule.lastSentAt).date === current.date) return false;
+  return true;
+}
+
+export function buildDigestImportantChange(input: {
+  subscriptions: number;
+  previousSubscriptions: number;
+  unsubscribes: number;
+  previousUnsubscribes: number;
+  unknownShare: number;
+  previousUnknownShare: number;
+}) {
+  if (input.subscriptions >= 5 && input.unknownShare - input.previousUnknownShare >= 0.1) {
+    return `частка невідомих джерел зросла на ${Math.round((input.unknownShare - input.previousUnknownShare) * 100)} п.п.`;
+  }
+  if (
+    input.unsubscribes >= 5 &&
+    input.unsubscribes >= input.previousUnsubscribes + 3 &&
+    (input.previousUnsubscribes === 0 || input.unsubscribes >= input.previousUnsubscribes * 1.5)
+  ) {
+    return `відписок стало ${input.unsubscribes} проти ${input.previousUnsubscribes} у попередньому періоді`;
+  }
+  if (
+    input.previousSubscriptions >= 5 &&
+    input.subscriptions <= input.previousSubscriptions * 0.7
+  ) {
+    return `підписок стало менше на ${Math.round((1 - input.subscriptions / input.previousSubscriptions) * 100)}%`;
+  }
+  return input.subscriptions === 0 && input.unsubscribes === 0
+    ? 'активності за період не було'
+    : 'різких змін не виявлено';
+}
 
 /** Мінімальний зріз grammY Bot, потрібний нотифікаціям — легко підмінити в тестах. */
 type NotifyBot = { api: { sendMessage: (id: number, text: string, extra?: object) => Promise<unknown> } };
@@ -56,6 +122,62 @@ export class BotAdminService {
     });
     await this.redis.del(`tg_bind:${rawToken}`);
     return { ok: true as const, userId };
+  }
+
+  /** S2-25: налаштування окремі для кожного користувача й workspace. */
+  async getDigestSettings(workspaceId: string, userId: string) {
+    const [membership, user] = await Promise.all([
+      this.prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId, userId } },
+      }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: { telegramId: true } }),
+    ]);
+    if (!membership) throw new NotFoundException('Workspace membership not found');
+
+    return {
+      enabled: membership.telegramDigestEnabled,
+      frequency: membership.telegramDigestFrequency,
+      hour: membership.telegramDigestHour,
+      channelIds: membership.telegramDigestChannelIds,
+      telegramLinked: Boolean(user?.telegramId),
+    };
+  }
+
+  async updateDigestSettings(
+    workspaceId: string,
+    userId: string,
+    input: {
+      enabled: boolean;
+      frequency: TelegramDigestFrequency;
+      hour: number;
+      channelIds: string[];
+    },
+  ) {
+    const membership = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+    });
+    if (!membership) throw new NotFoundException('Workspace membership not found');
+
+    const uniqueChannelIds = [...new Set(input.channelIds)];
+    if (uniqueChannelIds.length > 0) {
+      const validCount = await this.prisma.channel.count({
+        where: { workspaceId, id: { in: uniqueChannelIds }, isActive: true },
+      });
+      if (validCount !== uniqueChannelIds.length) {
+        throw new BadRequestException('Один або кілька каналів недоступні');
+      }
+    }
+
+    await this.prisma.workspaceMember.update({
+      where: { id: membership.id },
+      data: {
+        telegramDigestEnabled: input.enabled,
+        telegramDigestFrequency: input.frequency,
+        telegramDigestHour: input.hour,
+        telegramDigestChannelIds: uniqueChannelIds,
+      },
+    });
+    return this.getDigestSettings(workspaceId, userId);
   }
 
   async getLinkedUser(telegramId: string) {
@@ -537,27 +659,141 @@ export class BotAdminService {
     );
   }
 
-  async sendDailyReportsToAll(bot: NotifyBot) {
-    const users = await this.prisma.user.findMany({
-      where: { telegramId: { not: null } },
-      include: { memberships: true },
+  private async buildScheduledDigest(
+    workspaceId: string,
+    selectedChannelIds: string[],
+    frequency: TelegramDigestFrequency,
+    now: Date,
+  ) {
+    const days = frequency === TelegramDigestFrequency.WEEKLY ? 7 : 1;
+    const to = kyivDayStart(now, 0);
+    const from = kyivDayStart(now, days);
+    const previousFrom = kyivDayStart(now, days * 2);
+    const activeChannels = await this.prisma.channel.findMany({
+      where: {
+        workspaceId,
+        isActive: true,
+        ...(selectedChannelIds.length > 0 ? { id: { in: selectedChannelIds } } : {}),
+      },
+      select: { id: true, title: true },
+      orderBy: { title: 'asc' },
+    });
+    if (activeChannels.length === 0) return null;
+    const channelIds = activeChannels.map((channel) => channel.id);
+    const channelFilter = { in: channelIds };
+
+    const [subscriptions, previousSubscriptions, unsubscribes, previousUnsubscribes, clicks, unknown, previousUnknown] =
+      await Promise.all([
+        this.prisma.membershipEvent.count({
+          where: {
+            workspaceId,
+            channelId: channelFilter,
+            eventType: MembershipEventType.SUBSCRIBE,
+            occurredAt: { gte: from, lt: to },
+          },
+        }),
+        this.prisma.membershipEvent.count({
+          where: {
+            workspaceId,
+            channelId: channelFilter,
+            eventType: MembershipEventType.SUBSCRIBE,
+            occurredAt: { gte: previousFrom, lt: from },
+          },
+        }),
+        this.prisma.unsubscribeEvent.count({
+          where: { workspaceId, channelId: channelFilter, occurredAt: { gte: from, lt: to } },
+        }),
+        this.prisma.unsubscribeEvent.count({
+          where: { workspaceId, channelId: channelFilter, occurredAt: { gte: previousFrom, lt: from } },
+        }),
+        this.prisma.clickEvent.count({
+          where: { workspaceId, channelId: channelFilter, clickedAt: { gte: from, lt: to } },
+        }),
+        this.prisma.attribution.count({
+          where: {
+            workspaceId,
+            channelId: channelFilter,
+            attributionType: { in: ['ORGANIC', 'UNKNOWN'] },
+            membershipEvent: {
+              eventType: MembershipEventType.SUBSCRIBE,
+              occurredAt: { gte: from, lt: to },
+            },
+          },
+        }),
+        this.prisma.attribution.count({
+          where: {
+            workspaceId,
+            channelId: channelFilter,
+            attributionType: { in: ['ORGANIC', 'UNKNOWN'] },
+            membershipEvent: {
+              eventType: MembershipEventType.SUBSCRIBE,
+              occurredAt: { gte: previousFrom, lt: from },
+            },
+          },
+        }),
+      ]);
+
+    const important = buildDigestImportantChange({
+      subscriptions,
+      previousSubscriptions,
+      unsubscribes,
+      previousUnsubscribes,
+      unknownShare: subscriptions > 0 ? unknown / subscriptions : 0,
+      previousUnknownShare: previousSubscriptions > 0 ? previousUnknown / previousSubscriptions : 0,
+    });
+    const channelLabel = activeChannels.length <= 3
+      ? activeChannels.map((channel) => channel.title).join(', ')
+      : `${activeChannels.length} каналів`;
+    const detailsUrl = this.cabinetUrl('/v2/reports?period=7d');
+
+    return (
+      `${days === 7 ? '📅 Тижневе' : '🌅 Щоденне'} зведення ClearTG\n\n` +
+      `Канали: ${channelLabel}\n` +
+      `Кліки: ${clicks}\n` +
+      `Підписки: +${subscriptions}\n` +
+      `Відписки: −${unsubscribes}\n` +
+      `Зміна аудиторії: ${subscriptions - unsubscribes >= 0 ? '+' : ''}${subscriptions - unsubscribes}\n\n` +
+      `Важливо: ${important}` +
+      (detailsUrl ? `\n\nДеталі: ${detailsUrl}` : '')
+    );
+  }
+
+  /** S2-24/S2-25: викликається щогодини, але кожна настройка відправляється лише раз. */
+  async sendDueDigestReports(bot: NotifyBot, now = new Date()) {
+    const memberships = await this.prisma.workspaceMember.findMany({
+      where: {
+        telegramDigestEnabled: true,
+        role: { in: [WorkspaceRole.OWNER, WorkspaceRole.ADMIN, WorkspaceRole.MEMBER] },
+        user: { telegramId: { not: null } },
+      },
+      include: { user: { select: { telegramId: true } } },
     });
 
-    for (const user of users) {
-      if (!user.telegramId) continue;
-      const wsIds = this.workspaceIdsForUser(user);
-      if (wsIds.length === 0) continue;
+    for (const membership of memberships) {
+      if (!membership.user.telegramId || !isDigestDue({
+        enabled: membership.telegramDigestEnabled,
+        frequency: membership.telegramDigestFrequency,
+        hour: membership.telegramDigestHour,
+        lastSentAt: membership.telegramDigestLastSentAt,
+      }, now)) continue;
 
       try {
-        const messages = await this.buildChannelDigests(wsIds, 'yesterday');
-        if (messages.length === 0) continue;
-        const chatId = parseInt(user.telegramId, 10);
-        await bot.api.sendMessage(chatId, '🌅 Щоденний звіт');
-        for (const text of messages) {
-          await bot.api.sendMessage(chatId, text);
-        }
+        const text = await this.buildScheduledDigest(
+          membership.workspaceId,
+          membership.telegramDigestChannelIds,
+          membership.telegramDigestFrequency,
+          now,
+        );
+        if (!text) continue;
+        await bot.api.sendMessage(parseInt(membership.user.telegramId, 10), text, {
+          reply_markup: this.mainMenuKeyboard(),
+        });
+        await this.prisma.workspaceMember.update({
+          where: { id: membership.id },
+          data: { telegramDigestLastSentAt: now },
+        });
       } catch {
-        /* blocked bot */
+        /* Користувач міг заблокувати бота; наступний scheduler спробує ще раз. */
       }
     }
   }
