@@ -1,11 +1,12 @@
 import Link from 'next/link';
-import { api, AuthError, type DigestSettings, type IntegrationStatus } from '@/lib/api';
+import { api, AuthError, type ClientBotConnection, type DigestSettings, type IntegrationStatus } from '@/lib/api';
 import { PageHeader, ErrorState, DisconnectedState } from '@/components/v2/ui';
 import { ChannelCard, type ChannelListItem } from '@/components/v2/channels/ChannelCard';
 import { ConnectChannelPanel } from '@/components/v2/channels/ConnectChannelPanel';
 import type { BotStatusResponse } from '@/components/v2/channels/channel-status';
 import { IntegrationHealthPanel } from '@/components/v2/channels/IntegrationHealthPanel';
 import { DigestSettingsPanel } from '@/components/v2/channels/DigestSettingsPanel';
+import { ClientBotPanel } from '@/components/v2/channels/ClientBotPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +54,7 @@ export default async function V2ChannelsPage() {
   let channels: ChannelListItem[] | null = null;
   let integrationStatus: IntegrationStatus | null = null;
   let digestSettings: DigestSettings | null = null;
+  let clientBots: ClientBotConnection[] | null = null;
   let failed = false;
   let sessionExpired = false;
 
@@ -61,12 +63,14 @@ export default async function V2ChannelsPage() {
     channels = await hydrateLegacyBotPermissions(storedChannels);
     // Нові S2 endpoints не повинні ламати базовий список під час rolling deploy,
     // коли web уже оновився, а API ще збирається.
-    const [integrationResult, digestResult] = await Promise.allSettled([
+    const [integrationResult, digestResult, botsResult] = await Promise.allSettled([
       api<IntegrationStatus>('/api/channels/integration-status'),
       api<DigestSettings>('/api/telegram/digest-settings'),
+      api<ClientBotConnection[]>('/api/client-bots'),
     ]);
     if (integrationResult.status === 'fulfilled') integrationStatus = integrationResult.value;
     if (digestResult.status === 'fulfilled') digestSettings = digestResult.value;
+    if (botsResult.status === 'fulfilled') clientBots = botsResult.value;
   } catch (err) {
     // middleware перекидає на /login лише коли cookie немає зовсім.
     // Протухлий токен доходить сюди — показуємо зрозумілий стан,
@@ -171,6 +175,7 @@ export default async function V2ChannelsPage() {
       )}
 
       <ConnectChannelPanel botUsername={botUsername} variant="compact" />
+      {clientBots && <ClientBotPanel bots={clientBots} />}
     </>
   );
 }

@@ -30,9 +30,10 @@ export class ChannelService {
     });
   }
 
-  async getById(id: string) {
-    return this.prisma.channel.findUnique({
-      where: { id },
+  /** Лише в межах свого кабінету — раніше канал можна було прочитати за чужим id. */
+  async getById(id: string, workspaceId: string) {
+    const channel = await this.prisma.channel.findFirst({
+      where: { id, workspaceId },
       include: {
         campaigns: true,
         _count: {
@@ -43,6 +44,36 @@ export class ChannelService {
           },
         },
       },
+    });
+    if (!channel) throw new NotFoundException('Channel not found');
+    return channel;
+  }
+
+  /**
+   * S2-14 / S2-15: налаштування вступу через заявки. Автосхвалення має сенс
+   * лише для каналу з заявками, тому вимкнення заявок вимикає і його.
+   */
+  async updateJoinRequestSettings(
+    workspaceId: string,
+    id: string,
+    data: { joinRequestsEnabled?: boolean; autoApproveJoinRequests?: boolean },
+  ) {
+    const channel = await this.prisma.channel.findFirst({ where: { id, workspaceId } });
+    if (!channel) throw new NotFoundException('Channel not found');
+
+    const joinRequestsEnabled = data.joinRequestsEnabled ?? channel.joinRequestsEnabled;
+    const autoApproveJoinRequests =
+      joinRequestsEnabled && (data.autoApproveJoinRequests ?? channel.autoApproveJoinRequests);
+
+    if (autoApproveJoinRequests && !channel.botCanInviteUsers) {
+      throw new BadRequestException(
+        'Щоб схвалювати заявки автоматично, дайте боту право «Додавання учасників» і натисніть «Перевірити».',
+      );
+    }
+
+    return this.prisma.channel.update({
+      where: { id },
+      data: { joinRequestsEnabled, autoApproveJoinRequests },
     });
   }
 

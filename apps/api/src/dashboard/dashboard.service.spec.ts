@@ -437,8 +437,8 @@ describe('DashboardService.exportReportsCsv', () => {
     const service = new DashboardService({} as never, {} as never, {} as never);
     vi.spyOn(service, 'getCampaignReports').mockResolvedValue([]);
     vi.spyOn(service, 'getTrackingLinkReports').mockResolvedValue([{
-      id: 'link_1', slug: 'promo', name: 'Осіння кампанія', campaignName: 'Запуск',
-      channelTitle: 'Новини', clicks: 10, reached: 8, reachRate: 0.8, uniqueClickers: 7,
+      id: 'link_1', slug: 'promo', name: 'Осіння кампанія', campaignName: 'Запуск', adPlatform: 'META',
+      channelTitle: 'Новини', clicks: 10, reachTracked: 10, reached: 8, reachRate: 0.8, uniqueClickers: 7,
       subscribers: 3, unsubscribes: 1, conversionRate: 0.3, autoRedirect: true,
       utmSource: 'meta', utmMedium: 'cpc', utmCampaign: 'осінь', utmContent: 'відео',
       utmTerm: 'аналітика', creativeTag: 'синій', postNumber: 42, landingPostUrl: null,

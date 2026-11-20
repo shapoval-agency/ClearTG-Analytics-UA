@@ -92,7 +92,7 @@ export class BotAdminService {
   }
 
   /** Public Vercel cabinet URL; null if missing or localhost (Telegram rejects those). */
-  private cabinetUrl(path = '/dashboard') {
+  private cabinetUrl(path = '/v2') {
     const base = tryPublicAppUrl(this.config);
     if (!base) return null;
     const p = path.startsWith('/') ? path : `/${path}`;
@@ -218,7 +218,7 @@ export class BotAdminService {
 
     const app = tryPublicAppUrl(this.config);
     if (app) {
-      kb.url('🖥 Кабінет', `${app}/dashboard`);
+      kb.url('🖥 Кабінет', `${app}/v2`);
     } else {
       kb.text('🖥 Кабінет', 'menu:cabinet');
     }
@@ -398,7 +398,7 @@ export class BotAdminService {
     }
 
     if (lines.length === 0) {
-      const channelsUrl = this.cabinetUrl('/channels');
+      const channelsUrl = this.cabinetUrl('/v2/channels');
       await ctx.reply(
         'Каналів ще немає.\n\n' +
           `1. Додайте @${this.botUsername()} адміном каналу\n` +
@@ -498,7 +498,7 @@ export class BotAdminService {
       Math.floor((periodEnd.getTime() - profile.subscribedAt.getTime()) / 86_400_000),
     );
 
-    const dossierUrl = this.cabinetUrl(`/subscribers/${profile.id}`);
+    const dossierUrl = this.cabinetUrl(`/v2/subscribers/${profile.id}`);
     return (
       `👤 Досьє підписника\n\n` +
       `Канал: ${profile.channel.title}\n` +

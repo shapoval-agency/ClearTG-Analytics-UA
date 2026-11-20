@@ -10,6 +10,21 @@ export interface ClickCandidate {
   campaignId: string | null;
   trackingLinkId: string;
   clickedAt: Date;
+  /**
+   * S2-13: чи дійшов клік до Telegram.
+   * true — дійшов; false — перехід вимірювався і НЕ відбувся;
+   * null/undefined — не вимірювався (миттєвий редирект).
+   */
+  reached?: boolean | null;
+}
+
+/**
+ * S2-13: клік, який точно не дійшов до Telegram, не може бути джерелом
+ * підписки — його не беремо в розрахункові кандидати. Зі звітів він не
+ * зникає: тут лише вибір кандидата для атрибуції. Невиміряні кліки лишаються.
+ */
+function couldHaveReachedTelegram(click: ClickCandidate): boolean {
+  return click.reached !== false;
 }
 
 export interface InviteLinkCandidate {
@@ -105,6 +120,7 @@ export function attributeSubscription(input: AttributionInput): AttributionResul
   if (inviteLinkUsed && !inviteLinkUsed.clickEventId) {
   const campaignClicks = recentClicks.filter(
       (c) =>
+        couldHaveReachedTelegram(c) &&
         c.campaignId &&
         inviteLinkUsed.campaignId &&
         c.campaignId === inviteLinkUsed.campaignId &&
@@ -141,7 +157,11 @@ export function attributeSubscription(input: AttributionInput): AttributionResul
 
   // 3. Probabilistic: nearest click in window
   const eligibleClicks = recentClicks
-    .filter((c) => withinWindow(c.clickedAt, subscribedAt, attributionWindowMinutes))
+    .filter(
+      (c) =>
+        couldHaveReachedTelegram(c) &&
+        withinWindow(c.clickedAt, subscribedAt, attributionWindowMinutes),
+    )
     .sort((a, b) => minutesBetween(a.clickedAt, subscribedAt) - minutesBetween(b.clickedAt, subscribedAt));
 
   if (eligibleClicks.length > 0) {

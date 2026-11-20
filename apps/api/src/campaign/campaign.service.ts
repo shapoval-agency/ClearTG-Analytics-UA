@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdPlatform, SpendModel, TargetEvent } from '@cleartg/database';
 
@@ -38,14 +38,17 @@ export class CampaignService {
     });
   }
 
-  async getById(id: string) {
-    return this.prisma.campaign.findUnique({
-      where: { id },
+  /** Лише в межах свого кабінету — раніше кампанію можна було прочитати за чужим id. */
+  async getById(id: string, workspaceId: string) {
+    const campaign = await this.prisma.campaign.findFirst({
+      where: { id, workspaceId },
       include: {
         channel: true,
         trackingLinks: true,
         _count: { select: { clickEvents: true, attributions: true } },
       },
     });
+    if (!campaign) throw new NotFoundException('Кампанію не знайдено');
+    return campaign;
   }
 }

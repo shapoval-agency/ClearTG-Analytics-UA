@@ -65,6 +65,11 @@ async function setTelegramWebhook(env, baseUrl) {
   const params = new URLSearchParams({
     url,
     secret_token: env.TELEGRAM_WEBHOOK_SECRET,
+    // Без явного списку Telegram НЕ шле chat_member — підписки б не фіксувались.
+    // Має збігатися з TELEGRAM_ALLOWED_UPDATES в apps/api/src/telegram/telegram.service.ts.
+    allowed_updates: JSON.stringify([
+      'message', 'my_chat_member', 'chat_member', 'chat_join_request', 'callback_query',
+    ]),
   });
   const res = await fetch(
     `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setWebhook?${params}`,

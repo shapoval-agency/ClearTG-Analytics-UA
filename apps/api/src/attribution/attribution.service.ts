@@ -74,6 +74,8 @@ export class AttributionService {
         campaignId: c.campaignId,
         trackingLinkId: c.trackingLinkId,
         clickedAt: c.clickedAt,
+        // S2-13: невиміряний клік (миттєвий редирект) — null, а не false.
+        reached: c.reachTracked ? c.telegramOpenedAt !== null : null,
       })),
     });
 

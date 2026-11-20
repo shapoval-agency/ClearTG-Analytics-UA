@@ -1,6 +1,7 @@
 import { Card, EmptyState } from '@/components/v2/ui';
 import { formatPercentUk } from '@/lib/labels';
 import type { PerformanceBreakdownRow } from './report-breakdowns';
+import { ReachCell } from './ReachCell';
 
 export function PerformanceBreakdown({
   title,
@@ -36,7 +37,7 @@ export function PerformanceBreakdown({
               <p className="mt-1 text-xs text-slate-500">{row.source} · {row.campaign}</p>
               <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 <div><dt className="text-xs text-slate-400">Кліки</dt><dd className="font-bold">{row.clicks}</dd></div>
-                <div><dt className="text-xs text-slate-400">Дійшли</dt><dd className="font-bold">{row.reached} · {row.clicks > 0 ? formatPercentUk(row.reached / row.clicks) : '—'}</dd></div>
+                <div><dt className="text-xs text-slate-400">Дійшли</dt><dd className="font-bold"><ReachCell row={row} compact /></dd></div>
                 <div><dt className="text-xs text-slate-400">Підписки</dt><dd className="font-bold">{row.subscribers}</dd></div>
                 <div><dt className="text-xs text-slate-400">Залишилось</dt><dd className="font-bold">{remaining}</dd></div>
               </dl>
@@ -70,8 +71,7 @@ export function PerformanceBreakdown({
                 </td>
                 <td className="px-3 py-3 text-right tabular-nums">{row.clicks}</td>
                 <td className="px-3 py-3 text-right tabular-nums">
-                  <p>{row.reached}</p>
-                  <p className="text-xs text-slate-400">{row.clicks > 0 ? formatPercentUk(row.reached / row.clicks) : '—'}</p>
+                  <ReachCell row={row} />
                 </td>
                 <td className="px-3 py-3 text-right tabular-nums">{row.subscribers}</td>
                 <td className="px-3 py-3 text-right tabular-nums">{row.subscribers - row.unsubscribes}</td>

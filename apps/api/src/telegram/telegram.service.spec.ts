@@ -76,3 +76,79 @@ describe('TelegramService.processSubscribe', () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 });
+
+describe('TelegramService.handleJoinRequest (S2-14 / S2-15)', () => {
+  const request = {
+    chat: { id: -1001, type: 'channel' },
+    from: { id: 42, username: 'anna', first_name: 'Anna' },
+    invite_link: { invite_link: 'https://t.me/+click' },
+  };
+
+  function buildJoinService(channel: Record<string, unknown> | null, approve = vi.fn().mockResolvedValue(true)) {
+    const prisma = {
+      channel: { findFirst: vi.fn().mockResolvedValue(channel) },
+      webhookEventRaw: { create: vi.fn().mockResolvedValue({}) },
+      membershipEvent: { create: vi.fn().mockResolvedValue({ id: 'jr_1' }) },
+    };
+    const inviteLinks = { findByTelegramUrl: vi.fn().mockResolvedValue({ id: 'invite_1' }) };
+    const logger = { warn: vi.fn(), error: vi.fn(), log: vi.fn() };
+    const service = new TelegramService(
+      prisma as never, logger as never, { get: vi.fn() } as never, {} as never, {} as never,
+      {} as never, {} as never, inviteLinks as never, {} as never,
+    );
+    (service as unknown as { bot: unknown }).bot = { api: { approveChatJoinRequest: approve } };
+    return { service, prisma, approve, logger };
+  }
+
+  it('зберігає заявку з посиланням, але не схвалює, якщо автосхвалення вимкнено', async () => {
+    const { service, prisma, approve } = buildJoinService({
+      id: 'ch_1', workspaceId: 'ws_1', title: 'Closed', autoApproveJoinRequests: false,
+    });
+
+    await service.handleJoinRequest(request, 500);
+
+    expect(prisma.webhookEventRaw.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventType: 'join_request',
+        payload: expect.objectContaining({ chatId: '-1001', userId: '42', inviteLink: 'https://t.me/+click' }),
+      }),
+    });
+    expect(approve).not.toHaveBeenCalled();
+    expect(prisma.membershipEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('схвалює заявку і фіксує JOIN_REQUEST_APPROVED з точним посиланням', async () => {
+    const { service, prisma, approve } = buildJoinService({
+      id: 'ch_1', workspaceId: 'ws_1', title: 'Closed', autoApproveJoinRequests: true,
+    });
+
+    await service.handleJoinRequest(request, 501);
+
+    expect(approve).toHaveBeenCalledWith(-1001, 42);
+    expect(prisma.membershipEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventType: 'JOIN_REQUEST_APPROVED',
+        inviteLinkId: 'invite_1',
+        rawUpdateId: '501',
+      }),
+    });
+  });
+
+  it('не падає і не вигадує схвалення, якщо Telegram відмовив (нема прав)', async () => {
+    const { service, prisma, logger } = buildJoinService(
+      { id: 'ch_1', workspaceId: 'ws_1', title: 'Closed', autoApproveJoinRequests: true },
+      vi.fn().mockRejectedValue(new Error('not enough rights')),
+    );
+
+    await service.handleJoinRequest(request, 502);
+
+    expect(prisma.membershipEvent.create).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('ігнорує заявки в непідключені канали', async () => {
+    const { service, prisma } = buildJoinService(null);
+    await service.handleJoinRequest(request, 503);
+    expect(prisma.webhookEventRaw.create).not.toHaveBeenCalled();
+  });
+});

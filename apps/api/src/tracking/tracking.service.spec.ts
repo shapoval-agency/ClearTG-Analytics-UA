@@ -37,6 +37,7 @@ function buildFakeLink(overrides: Record<string, unknown> = {}) {
       username: 'testchannel',
       telegramChatId: '-1000000000001',
       botIsAdmin: false,
+      joinRequestsEnabled: false,
     },
     campaign: null,
     botConnection: null,
@@ -66,27 +67,39 @@ function buildService(link: ReturnType<typeof buildFakeLink>) {
   return { service, prisma, crypto, inviteLinks, clickEventUpdate };
 }
 
+function linkPrisma(overrides: Record<string, unknown> = {}) {
+  return {
+    channel: { findFirst: vi.fn().mockResolvedValue({ id: 'channel_1' }) },
+    campaign: {
+      findFirst: vi.fn().mockResolvedValue({ adPlatform: 'META', channelId: 'channel_1' }),
+    },
+    telegramBotConnection: { findFirst: vi.fn().mockResolvedValue({ isActive: true }) },
+    trackingLink: {
+      create: vi.fn().mockImplementation(({ data }) => Promise.resolve({
+        ...data,
+        id: `tracking_${data.name ?? '1'}`,
+      })),
+      findFirst: vi.fn(),
+      update: vi.fn().mockImplementation(({ data }) => Promise.resolve({
+        ...data,
+        id: 'tracking_1',
+        linkMode: 'SHORTLINK',
+        slug: 'existing',
+      })),
+    },
+    $transaction: vi.fn().mockImplementation((ops: Promise<unknown>[]) => Promise.all(ops)),
+    ...overrides,
+  };
+}
+
+function linkService(prisma: ReturnType<typeof linkPrisma>) {
+  return new TrackingService(prisma as never, { getHashSalt: vi.fn() } as never, {} as never);
+}
+
 describe('TrackingService.createLink', () => {
   it('зберігає повний набір UTM і маршрут на конкретний допис', async () => {
-    const create = vi.fn().mockImplementation(({ data }) => Promise.resolve({
-      ...data,
-      id: 'tracking_1',
-      linkMode: 'SHORTLINK',
-      slug: 'generated',
-    }));
-    const prisma = {
-      campaign: {
-        findFirst: vi.fn().mockResolvedValue({ adPlatform: 'META' }),
-      },
-      trackingLink: { create },
-    };
-    const service = new TrackingService(
-      prisma as never,
-      { getHashSalt: vi.fn() } as never,
-      {} as never,
-    );
-
-    const result = await service.createLink('ws_1', {
+    const prisma = linkPrisma();
+    const result = await linkService(prisma).createLink('ws_1', {
       channelId: 'channel_1',
       campaignId: 'campaign_1',
       destinationMode: 'PUBLIC_POST',
@@ -99,7 +112,7 @@ describe('TrackingService.createLink', () => {
       creativeTag: 'blue',
     });
 
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+    expect(prisma.trackingLink.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         destinationMode: 'PUBLIC_POST',
         landingPostUrl: 'https://t.me/example/123',
@@ -111,22 +124,155 @@ describe('TrackingService.createLink', () => {
         creativeTag: 'blue',
       }),
     }));
-    expect(result.publicPath).toBe('/r/generated');
+    expect(result.publicPath).toMatch(/^\/l\//);
   });
 
   it('не дозволяє підмінити Telegram-допис зовнішнім редиректом', async () => {
-    const prisma = {
-      campaign: { findFirst: vi.fn().mockResolvedValue(null) },
-      trackingLink: { create: vi.fn() },
-    };
-    const service = new TrackingService(prisma as never, {} as never, {} as never);
-
-    await expect(service.createLink('ws_1', {
+    const prisma = linkPrisma();
+    await expect(linkService(prisma).createLink('ws_1', {
       channelId: 'channel_1',
       destinationMode: 'PUBLIC_POST',
       landingPostUrl: 'https://example.com/not-telegram',
     })).rejects.toThrow('https://t.me/');
     expect(prisma.trackingLink.create).not.toHaveBeenCalled();
+  });
+
+  it('не дає прив’язати посилання до каналу з чужого кабінету', async () => {
+    const prisma = linkPrisma({ channel: { findFirst: vi.fn().mockResolvedValue(null) } });
+    await expect(linkService(prisma).createLink('ws_1', { channelId: 'foreign_channel' }))
+      .rejects.toThrow('Канал не знайдено');
+    expect(prisma.channel.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'foreign_channel', workspaceId: 'ws_1' },
+    }));
+    expect(prisma.trackingLink.create).not.toHaveBeenCalled();
+  });
+
+  it('не приймає кампанію іншого каналу', async () => {
+    const prisma = linkPrisma({
+      campaign: {
+        findFirst: vi.fn().mockResolvedValue({ adPlatform: 'META', channelId: 'channel_2' }),
+      },
+    });
+    await expect(linkService(prisma).createLink('ws_1', {
+      channelId: 'channel_1',
+      campaignId: 'campaign_2',
+    })).rejects.toThrow('іншому каналу');
+  });
+
+  it('S2-05: перехід в особистий акаунт вимагає адресу https://t.me/username', async () => {
+    const prisma = linkPrisma();
+    await expect(linkService(prisma).createLink('ws_1', {
+      channelId: 'channel_1',
+      destinationMode: 'PERSONAL_CHAT',
+      destinationUrl: 'https://example.com/me',
+    })).rejects.toThrow('t.me/username');
+
+    await linkService(prisma).createLink('ws_1', {
+      channelId: 'channel_1',
+      destinationMode: 'PERSONAL_CHAT',
+      destinationUrl: 'https://t.me/manager_anna',
+    });
+    expect(prisma.trackingLink.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('S2-03: посилання на бота вимагає підключеного активного бота', async () => {
+    const prisma = linkPrisma();
+    await expect(linkService(prisma).createLink('ws_1', {
+      channelId: 'channel_1',
+      destinationMode: 'CLIENT_BOT_START',
+    })).rejects.toThrow('Оберіть підключеного бота');
+
+    const disabled = linkPrisma({
+      telegramBotConnection: { findFirst: vi.fn().mockResolvedValue({ isActive: false }) },
+    });
+    await expect(linkService(disabled).createLink('ws_1', {
+      channelId: 'channel_1',
+      destinationMode: 'CLIENT_BOT_START',
+      botConnectionId: 'bot_1',
+    })).rejects.toThrow('відключений');
+  });
+});
+
+describe('TrackingService.createLinksBulk (S2-09)', () => {
+  it('створює всі посилання однією транзакцією зі спільними налаштуваннями', async () => {
+    const prisma = linkPrisma();
+    const result = await linkService(prisma).createLinksBulk('ws_1', {
+      base: { channelId: 'channel_1', campaignId: 'campaign_1', utmSource: 'meta' },
+      items: [
+        { name: 'Відео 1', creativeTag: 'video_1' },
+        { name: 'Відео 2', creativeTag: 'video_2' },
+      ],
+    });
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.trackingLink.create).toHaveBeenCalledTimes(2);
+    expect(prisma.trackingLink.create).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      data: expect.objectContaining({ name: 'Відео 2', creativeTag: 'video_2', utmSource: 'meta' }),
+    }));
+    expect(result).toHaveLength(2);
+    expect(new Set(result.map((l) => l.slug)).size).toBe(2);
+  });
+
+  it('відмовляє, якщо назви в пачці повторюються', async () => {
+    const prisma = linkPrisma();
+    await expect(linkService(prisma).createLinksBulk('ws_1', {
+      base: { channelId: 'channel_1' },
+      items: [{ name: 'Відео' }, { name: 'відео ' }],
+    })).rejects.toThrow('повторюються');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('TrackingService.updateLink (S2-07 / S2-18)', () => {
+  const existing = {
+    id: 'tracking_1',
+    workspaceId: 'ws_1',
+    channelId: 'channel_1',
+    campaignId: null,
+    botConnectionId: null,
+    linkMode: 'SHORTLINK',
+    destinationMode: 'INVITE_LINK',
+    landingPostUrl: null,
+    destinationUrl: null,
+    postNumber: null,
+  };
+
+  it('змінює назву й мітки, очищає порожні значення і не чіпає адресу та канал', async () => {
+    const prisma = linkPrisma();
+    prisma.trackingLink.findFirst.mockResolvedValue(existing);
+
+    await linkService(prisma).updateLink('ws_1', 'tracking_1', {
+      name: '  Нова назва ',
+      utmContent: '',
+      autoRedirect: false,
+    });
+
+    const { data } = prisma.trackingLink.update.mock.calls[0][0];
+    expect(data).toEqual({ name: 'Нова назва', utmContent: null, autoRedirect: false });
+    expect(data).not.toHaveProperty('channelId');
+    expect(data).not.toHaveProperty('slug');
+    expect(data).not.toHaveProperty('linkMode');
+  });
+
+  it('не дозволяє кампанію, несумісну з уже виданою адресою', async () => {
+    const prisma = linkPrisma({
+      campaign: {
+        // Коротке посилання (/r/) не можна віддати під платну кампанію.
+        findFirst: vi.fn().mockResolvedValue({ adPlatform: 'META', channelId: 'channel_1' }),
+      },
+    });
+    prisma.trackingLink.findFirst.mockResolvedValue({ ...existing, linkMode: 'SHORTLINK' });
+
+    await expect(linkService(prisma).updateLink('ws_1', 'tracking_1', { campaignId: 'campaign_meta' }))
+      .rejects.toThrow('Створіть нове посилання');
+    expect(prisma.trackingLink.update).not.toHaveBeenCalled();
+  });
+
+  it('повертає 404 для посилання з чужого кабінету', async () => {
+    const prisma = linkPrisma();
+    prisma.trackingLink.findFirst.mockResolvedValue(null);
+    await expect(linkService(prisma).updateLink('ws_1', 'foreign', { name: 'x' }))
+      .rejects.toThrow('не знайдено');
   });
 });
 
@@ -135,38 +281,44 @@ describe('TrackingService.recordClick', () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com');
   });
 
-  it('проставляє telegramOpenedAt одразу, коли редирект миттєвий (дефолт: autoRedirect=true, delay=0)', async () => {
+  it('S2-10: миттєвий редирект не вимірює перехід і не ставить фіктивне «дійшов»', async () => {
     const link = buildFakeLink();
-    const { service, clickEventUpdate } = buildService(link);
+    const { service, prisma, clickEventUpdate } = buildService(link);
 
     const result = await service.recordClick('test-slug', {}, {}, 'shortlink_page', 'SHORTLINK');
 
     expect(result.channelUnavailable).toBe(false);
-    expect(clickEventUpdate).toHaveBeenCalledWith({
-      where: { id: 'click_1' },
-      data: { telegramOpenedAt: expect.any(Date) },
-    });
+    expect(prisma.clickEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ reachTracked: false }),
+    }));
+    expect(clickEventUpdate).not.toHaveBeenCalled();
   });
 
-  it('НЕ проставляє telegramOpenedAt, коли є затримка редиректу (сторінка реально показується, чекаємо маячок)', async () => {
+  it('редирект із затримкою теж не вимірюється (маячок спрацьовує лише на кнопці)', async () => {
     const link = buildFakeLink({ redirectDelayMs: 3000 });
-    const { service, clickEventUpdate } = buildService(link);
+    const { service, prisma, clickEventUpdate } = buildService(link);
 
     await service.recordClick('test-slug', {}, {}, 'shortlink_page', 'SHORTLINK');
 
+    expect(prisma.clickEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ reachTracked: false }),
+    }));
     expect(clickEventUpdate).not.toHaveBeenCalled();
   });
 
-  it('НЕ проставляє telegramOpenedAt, коли autoRedirect вимкнено (ручний CTA)', async () => {
+  it('S2-11: сторінка з кнопкою (autoRedirect=false) вимірює перехід', async () => {
     const link = buildFakeLink({ autoRedirect: false });
-    const { service, clickEventUpdate } = buildService(link);
+    const { service, prisma, clickEventUpdate } = buildService(link);
 
     await service.recordClick('test-slug', {}, {}, 'shortlink_page', 'SHORTLINK');
 
+    expect(prisma.clickEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ reachTracked: true }),
+    }));
     expect(clickEventUpdate).not.toHaveBeenCalled();
   });
 
-  it('НЕ проставляє telegramOpenedAt, коли канал недоступний (нема куди редиректити)', async () => {
+  it('канал недоступний — клік рахується як точно «не дійшов»', async () => {
     const link = buildFakeLink({
       destinationMode: 'INVITE_LINK',
       destinationUrl: null,
@@ -175,6 +327,7 @@ describe('TrackingService.recordClick', () => {
         username: null,
         telegramChatId: '-1000000000002',
         botIsAdmin: false,
+        joinRequestsEnabled: false,
       },
     });
     const { service, clickEventUpdate } = buildService(link);
@@ -182,7 +335,31 @@ describe('TrackingService.recordClick', () => {
     const result = await service.recordClick('test-slug', {}, {}, 'shortlink_page', 'SHORTLINK');
 
     expect(result.channelUnavailable).toBe(true);
-    expect(clickEventUpdate).not.toHaveBeenCalled();
+    expect(clickEventUpdate).toHaveBeenCalledWith({
+      where: { id: 'click_1' },
+      data: { reachTracked: true },
+    });
+  });
+
+  it('S2-15: у каналі з заявками per-click invite створюється із заявкою', async () => {
+    const link = buildFakeLink({
+      usePerClickInvite: true,
+      channel: {
+        title: 'Closed',
+        username: null,
+        telegramChatId: '-1000000000003',
+        botIsAdmin: true,
+        joinRequestsEnabled: true,
+      },
+    });
+    const { service, inviteLinks } = buildService(link);
+    inviteLinks.createForClick.mockResolvedValue({ telegramInviteLink: 'https://t.me/+abc' });
+
+    await service.recordClick('test-slug', {}, {}, 'shortlink_page', 'SHORTLINK');
+
+    expect(inviteLinks.createForClick).toHaveBeenCalledWith(
+      expect.objectContaining({ createsJoinRequest: true }),
+    );
   });
 });
 

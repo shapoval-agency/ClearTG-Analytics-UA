@@ -20,6 +20,19 @@ import {
 import { Bot, webhookCallback } from 'grammy';
 import { MembershipEventType, Prisma } from '@cleartg/database';
 
+/** Оновлення, які бот має отримувати (polling і webhook). */
+export const TELEGRAM_ALLOWED_UPDATES = [
+  'message',
+  'my_chat_member',
+  'chat_member',
+  'chat_join_request',
+  'callback_query',
+] as const;
+
+const JOIN_REQUEST_EVENT = 'join_request';
+/** Заявку можуть схвалити не одразу — шукаємо її за останні 14 днів. */
+const JOIN_REQUEST_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class TelegramService implements OnModuleInit {
   private bot: Bot | null = null;
@@ -75,7 +88,7 @@ export class TelegramService implements OnModuleInit {
     try {
       await this.bot.api.deleteWebhook({ drop_pending_updates: false });
       void this.bot.start({
-        allowed_updates: ['message', 'my_chat_member', 'chat_member', 'callback_query'],
+        allowed_updates: [...TELEGRAM_ALLOWED_UPDATES],
         onStart: () => {
           this.logger.log('Telegram polling активний (staging)', 'Telegram');
         },
@@ -172,7 +185,7 @@ export class TelegramService implements OnModuleInit {
         );
         return;
       }
-      await ctx.reply(`🖥 Кабінет ClearTG:\n${url}/dashboard`);
+      await ctx.reply(`🖥 Кабінет ClearTG:\n${url}/v2`);
     });
 
     this.bot.callbackQuery(/^menu:/, async (ctx) => {
@@ -192,7 +205,7 @@ export class TelegramService implements OnModuleInit {
         const url = tryPublicAppUrl(this.config);
         await ctx.reply(
           url
-            ? `🖥 Кабінет ClearTG:\n${url}/dashboard`
+            ? `🖥 Кабінет ClearTG:\n${url}/v2`
             : 'Задайте NEXT_PUBLIC_APP_URL на API (URL Vercel кабінету).',
         );
       } else if (action === 'help') {
@@ -351,6 +364,11 @@ export class TelegramService implements OnModuleInit {
       await this.handleChatMemberUpdate(ctx);
     });
 
+    // S2-14 / S2-15: заявки на вступ у закритий канал.
+    this.bot.on('chat_join_request', async (ctx) => {
+      await this.handleJoinRequest(ctx.chatJoinRequest, ctx.update.update_id);
+    });
+
     // Перейменування групи/супергрупи — Telegram шле службове повідомлення
     // new_chat_title (на відміну від my_chat_member, це не зміна прав бота).
     // Для каналів такої події не існує — там назва оновлюється лише при
@@ -377,6 +395,7 @@ export class TelegramService implements OnModuleInit {
       };
       old_chat_member: { status: string };
       invite_link?: { invite_link: string } | null;
+      via_join_request?: boolean;
     };
     update: { update_id: number };
   }) {
@@ -418,7 +437,11 @@ export class TelegramService implements OnModuleInit {
     });
 
     if (eventType === MembershipEventType.SUBSCRIBE) {
-      const inviteUrl = chatMember.invite_link?.invite_link ?? null;
+      // S2-15: після схвалення заявки Telegram не завжди передає invite_link —
+      // тоді беремо посилання з самої заявки, збереженої раніше.
+      const inviteUrl =
+        chatMember.invite_link?.invite_link ??
+        (await this.findJoinRequestInviteUrl(channel.id, String(chatMember.chat.id), telegramUserId));
       await this.processSubscribe(
         channel.workspaceId,
         channel.id,
@@ -447,6 +470,118 @@ export class TelegramService implements OnModuleInit {
         'Telegram',
       );
     }
+  }
+
+  /**
+   * S2-14 / S2-15: заявка на вступ.
+   *
+   * Заявку завжди зберігаємо (WebhookEventRaw) разом із посиланням, через яке
+   * її подали, — щоб після схвалення (автоматичного чи ручного) підписка
+   * отримала те саме джерело. Окремої таблиці заявок не створюємо: для
+   * схвалення вже є MembershipEventType.JOIN_REQUEST_APPROVED.
+   */
+  async handleJoinRequest(
+    request: {
+      chat: { id: number; type: string };
+      from: { id: number; username?: string; first_name: string; last_name?: string };
+      invite_link?: { invite_link: string } | null;
+    },
+    updateId: number,
+  ) {
+    if (!isTrackableChatType(request.chat.type)) return;
+    const telegramChatId = String(request.chat.id);
+    const channel = await this.prisma.channel.findFirst({ where: { telegramChatId } });
+    if (!channel) return;
+
+    const telegramUserId = String(request.from.id);
+    const inviteUrl = request.invite_link?.invite_link ?? null;
+
+    await this.prisma.webhookEventRaw.create({
+      data: {
+        source: 'telegram',
+        eventType: JOIN_REQUEST_EVENT,
+        payload: {
+          chatId: telegramChatId,
+          userId: telegramUserId,
+          inviteLink: inviteUrl,
+          updateId,
+        },
+      },
+    });
+
+    if (!channel.autoApproveJoinRequests || !this.bot) return;
+
+    try {
+      await this.bot.api.approveChatJoinRequest(request.chat.id, request.from.id);
+    } catch (err) {
+      // Найчастіше — у бота немає права «Додавання учасників». Заявка лишається
+      // в Telegram, адмін схвалить її вручну, джерело все одно збережеться.
+      this.logger.error(
+        `Не вдалося схвалити заявку user ${telegramUserId} у ${channel.title}: ${
+          err instanceof Error ? err.message : err
+        }`,
+        'Telegram',
+      );
+      return;
+    }
+
+    const invite = inviteUrl ? await this.inviteLinks.findByTelegramUrl(inviteUrl) : null;
+    try {
+      await this.prisma.membershipEvent.create({
+        data: {
+          workspaceId: channel.workspaceId,
+          channelId: channel.id,
+          eventType: MembershipEventType.JOIN_REQUEST_APPROVED,
+          telegramUserId,
+          telegramUsername: request.from.username,
+          telegramFirstName: request.from.first_name,
+          telegramLastName: request.from.last_name,
+          inviteLinkId: invite?.id ?? null,
+          rawUpdateId: String(updateId),
+        },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return;
+      throw err;
+    }
+    this.logger.log(`Заявку user ${telegramUserId} у ${channel.title} схвалено автоматично`, 'Telegram');
+  }
+
+  /** S2-15: посилання, через яке людина подала останню заявку в цей канал. */
+  private async findJoinRequestInviteUrl(
+    channelId: string,
+    telegramChatId: string,
+    telegramUserId: string,
+  ): Promise<string | null> {
+    const since = new Date(Date.now() - JOIN_REQUEST_LOOKBACK_MS);
+
+    const approved = await this.prisma.membershipEvent.findFirst({
+      where: {
+        channelId,
+        telegramUserId,
+        eventType: MembershipEventType.JOIN_REQUEST_APPROVED,
+        occurredAt: { gte: since },
+        inviteLinkId: { not: null },
+      },
+      orderBy: { occurredAt: 'desc' },
+      include: { inviteLink: { select: { telegramInviteLink: true } } },
+    });
+    if (approved?.inviteLink) return approved.inviteLink.telegramInviteLink;
+
+    const request = await this.prisma.webhookEventRaw.findFirst({
+      where: {
+        source: 'telegram',
+        eventType: JOIN_REQUEST_EVENT,
+        receivedAt: { gte: since },
+        AND: [
+          { payload: { path: ['chatId'], equals: telegramChatId } },
+          { payload: { path: ['userId'], equals: telegramUserId } },
+        ],
+      },
+      orderBy: { receivedAt: 'desc' },
+    });
+    const url = (request?.payload as { inviteLink?: unknown } | null)?.inviteLink;
+    return typeof url === 'string' ? url : null;
   }
 
   private async processSubscribe(

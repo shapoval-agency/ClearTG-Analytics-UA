@@ -6,6 +6,7 @@ import {
   type SubscriberFeedRow,
 } from '@/lib/api';
 import { PageHeader, Card, Badge, ErrorState } from '@/components/v2/ui';
+import { buildSubscriberActions } from '@/components/v2/subscribers/subscriber-actions';
 import { attributionTypeLabel, confidenceLabelUk, formatDateUk, formatPercentUk } from '@/lib/labels';
 import { CycleHistory } from '@/components/v2/subscribers/CycleHistory';
 
@@ -114,8 +115,9 @@ export default async function V2SubscriberDossierPage({
   // профіль там теж присутній, якщо запит історії не впав).
   const currentCycle = cycles.find((c) => c.id === dossier!.id);
   const trackingLinkDisplay = attr?.trackingLink
-    ? (currentCycle?.trackingLinkName ?? `/${attr.trackingLink}`)
+    ? (attr.trackingLinkName ?? currentCycle?.trackingLinkName ?? `/${attr.trackingLink}`)
     : null;
+  const actions = buildSubscriberActions(dossier);
 
   const lastUnsubscribe = dossier.unsubscribes[0] ?? null;
 
@@ -199,6 +201,27 @@ export default async function V2SubscriberDossierPage({
           ) : (
             <p className="text-sm text-slate-500 italic">Джерело не визначено</p>
           )}
+        </Card>
+      </div>
+
+      <div className="mt-6">
+        <Card title="Ключові дії" hint="Що робила ця людина — від кліку до утримання">
+          <ol className="space-y-2.5">
+            {actions.map((action) => (
+              <li key={action.key} className="flex gap-3 text-sm">
+                <span
+                  aria-hidden="true"
+                  className={`mt-1.5 size-2 shrink-0 rounded-full ${
+                    action.tone === 'ok' ? 'bg-emerald-500' : action.tone === 'warn' ? 'bg-amber-500' : 'bg-slate-300'
+                  }`}
+                />
+                <span className="min-w-0">
+                  <span className="text-slate-800">{action.label}</span>
+                  {action.at && <span className="ml-2 text-xs text-slate-400">{formatDateUk(action.at)}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
         </Card>
       </div>
 

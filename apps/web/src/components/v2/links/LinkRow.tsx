@@ -8,7 +8,9 @@ import {
 import { Badge } from '@/components/v2/ui';
 import { formatDateUk } from '@/lib/labels';
 import { CopyButton } from './CopyButton';
-import { trafficSourceLabel, type LinkRowData } from './link-kind';
+import { trafficSourceLabel, type EditableLink, type LinkRowData } from './link-kind';
+import { LinkEditForm } from './LinkEditForm';
+import type { BuilderBot, BuilderCampaign } from './LinkBuilder';
 
 /**
  * Рядок списку посилань.
@@ -16,10 +18,21 @@ import { trafficSourceLabel, type LinkRowData } from './link-kind';
  * Показує назву, тип, канал, джерело, кампанію, мітки, дату і стан.
  * Внутрішні id, slug і технічні режими не показуються.
  */
-export function LinkRow({ row }: { row: LinkRowData }) {
+export function LinkRow({
+  row,
+  campaigns = [],
+  bots = [],
+  onDuplicate,
+}: {
+  row: LinkRowData;
+  campaigns?: BuilderCampaign[];
+  bots?: BuilderBot[];
+  onDuplicate?: (value: EditableLink) => void;
+}) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   function archive(next: boolean) {
     setError(null);
@@ -89,6 +102,17 @@ export function LinkRow({ row }: { row: LinkRowData }) {
         <p className="text-sm text-red-700 mt-3">{error}</p>
       )}
 
+      {editing && row.editable && (
+        <LinkEditForm
+          linkId={row.id}
+          value={row.editable}
+          campaigns={campaigns}
+          bots={bots}
+          clicks={row.clicks ?? 0}
+          onDone={() => setEditing(false)}
+        />
+      )}
+
       <div className="mt-4 border-t border-slate-100 pt-4">
         {confirmingRevoke ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -111,6 +135,18 @@ export function LinkRow({ row }: { row: LinkRowData }) {
         ) : (
           <div className="flex flex-wrap gap-2">
             <CopyButton value={row.url} />
+            {row.editable && !editing && (
+              <button type="button" onClick={() => setEditing(true)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                Редагувати
+              </button>
+            )}
+            {row.editable && onDuplicate && (
+              <button type="button" onClick={() => onDuplicate(row.editable!)}
+                className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-700">
+                Дублювати
+              </button>
+            )}
             {row.kind === 'tracking' && row.isActive && (
               <button type="button" disabled={pending} onClick={() => archive(false)}
                 className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-50">

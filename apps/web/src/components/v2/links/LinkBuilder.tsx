@@ -5,13 +5,21 @@ import Link from 'next/link';
 import {
   createCampaignV2Action,
   createTrackingLinkV2Action,
+  createTrackingLinksBulkV2Action,
   createSeedInviteLinkV2Action,
+  type TrackingLinkInput,
 } from '@/app/v2/actions';
 import { CopyButton } from './CopyButton';
 import {
   TRAFFIC_SOURCES,
+  DESTINATION_MODE,
   linkKindOptions,
   requiresCampaign,
+  parseBulkLines,
+  normalizePersonalUrl,
+  isTelegramPersonalUrl,
+  type EditableLink,
+  type LinkDestinationKind,
   type LinkKind,
   type TrafficSource,
 } from './link-kind';
@@ -30,6 +38,19 @@ export interface BuilderCampaign {
   channelId: string;
 }
 
+export interface BuilderBot {
+  id: string;
+  botUsername: string;
+  isActive: boolean;
+}
+
+const DESTINATIONS: Array<{ value: LinkDestinationKind; label: string; description: string }> = [
+  { value: 'channel', label: 'Канал', description: 'Людина потрапляє у ваш канал.' },
+  { value: 'post', label: 'Конкретний допис', description: 'Відкривається певний допис каналу.' },
+  { value: 'bot', label: 'Ваш бот', description: 'Запуск бота з міткою — видно клік і старт окремо.' },
+  { value: 'personal', label: 'Особистий акаунт', description: 'Перехід у ваш акаунт для листування. Фіксуємо лише клік і мітки — доступу до листування немає.' },
+];
+
 /**
  * Конструктор посилання.
  *
@@ -41,38 +62,55 @@ export interface BuilderCampaign {
 export function LinkBuilder({
   channels,
   campaigns,
+  bots = [],
   appUrl,
+  initial,
   onCreated,
 }: {
   channels: BuilderChannel[];
   campaigns: BuilderCampaign[];
+  bots?: BuilderBot[];
   appUrl: string;
+  /** S2-06: заповнення з наявного посилання («Дублювати»). */
+  initial?: EditableLink | null;
   onCreated?: () => void;
 }) {
   const [pending, startTransition] = useTransition();
 
-  const [channelId, setChannelId] = useState(channels[0]?.id ?? '');
+  const [channelId, setChannelId] = useState(initial?.channelId ?? channels[0]?.id ?? '');
   // Кампанії, створені прямо тут. Проп `campaigns` мутувати не можна:
   // посилання на масив не зміниться, і useMemo нижче не перерахується —
   // щойно створена кампанія не з'явилася б у списку.
   const [extraCampaigns, setExtraCampaigns] = useState<BuilderCampaign[]>([]);
-  const [source, setSource] = useState<TrafficSource | ''>('');
-  const [name, setName] = useState('');
-  const [campaignId, setCampaignId] = useState('');
+  const [source, setSource] = useState<TrafficSource | ''>((initial?.source as TrafficSource) ?? '');
+  const [name, setName] = useState(initial ? `${initial.name || 'Посилання'} (копія)` : '');
+  const [campaignId, setCampaignId] = useState(initial?.campaignId ?? '');
   const [newCampaignName, setNewCampaignName] = useState('');
   const [creatingCampaign, setCreatingCampaign] = useState(false);
   const [kind, setKind] = useState<LinkKind>('tracking');
-  const [showMarks, setShowMarks] = useState(false);
-  const [utmSource, setUtmSource] = useState('');
-  const [utmMedium, setUtmMedium] = useState('');
-  const [utmCampaign, setUtmCampaign] = useState('');
-  const [utmContent, setUtmContent] = useState('');
-  const [utmTerm, setUtmTerm] = useState('');
-  const [creativeTag, setCreativeTag] = useState('');
-  const [postUrl, setPostUrl] = useState('');
+  const [showMarks, setShowMarks] = useState(Boolean(
+    initial && (initial.utmSource || initial.utmMedium || initial.utmCampaign || initial.utmContent || initial.utmTerm || initial.creativeTag),
+  ));
+  const [utmSource, setUtmSource] = useState(initial?.utmSource ?? '');
+  const [utmMedium, setUtmMedium] = useState(initial?.utmMedium ?? '');
+  const [utmCampaign, setUtmCampaign] = useState(initial?.utmCampaign ?? '');
+  const [utmContent, setUtmContent] = useState(initial?.utmContent ?? '');
+  const [utmTerm, setUtmTerm] = useState(initial?.utmTerm ?? '');
+  const [creativeTag, setCreativeTag] = useState(initial?.creativeTag ?? '');
+  const [destination, setDestination] = useState<LinkDestinationKind>(initial?.destination ?? 'channel');
+  const [postUrl, setPostUrl] = useState(initial?.postUrl ?? '');
+  const [personalUrl, setPersonalUrl] = useState(initial?.personalUrl ?? '');
+  const activeBots = bots.filter((b) => b.isActive);
+  const [botConnectionId, setBotConnectionId] = useState(
+    initial?.botConnectionId || activeBots[0]?.id || '',
+  );
+  const [measureReach, setMeasureReach] = useState(initial?.measureReach ?? false);
+  const [bulk, setBulk] = useState(false);
+  const [bulkText, setBulkText] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ url: string; hint: string } | null>(null);
+  const [bulkResult, setBulkResult] = useState<Array<{ name: string; url: string }> | null>(null);
 
   const channel = channels.find((c) => c.id === channelId) ?? null;
 
@@ -112,6 +150,8 @@ export function LinkBuilder({
     setUtmTerm('');
     setCreativeTag('');
     setPostUrl('');
+    setPersonalUrl('');
+    setBulkText('');
     setNewCampaignName('');
   }
 
@@ -156,6 +196,19 @@ export function LinkBuilder({
       setError('Для запрошувального посилання потрібна кампанія — оберіть або створіть її');
       return;
     }
+    if (kind === 'tracking' && destination === 'post' && !postUrl.trim()) {
+      setError('Вкажіть адресу допису, наприклад https://t.me/channel/123');
+      return;
+    }
+    if (kind === 'tracking' && destination === 'bot' && !botConnectionId) {
+      setError('Спочатку підключіть свого бота в розділі «Канали»');
+      return;
+    }
+    if (kind === 'tracking' && destination === 'personal' && !isTelegramPersonalUrl(normalizePersonalUrl(personalUrl))) {
+      setError('Вкажіть особистий акаунт як @username або https://t.me/username');
+      return;
+    }
+    setBulkResult(null);
 
     startTransition(async () => {
       if (kind === 'invite') {
@@ -173,7 +226,7 @@ export function LinkBuilder({
         return;
       }
 
-      const res = await createTrackingLinkV2Action({
+      const input: TrackingLinkInput = {
         channelId,
         campaignId: campaignId || undefined,
         name,
@@ -183,9 +236,31 @@ export function LinkBuilder({
         utmContent,
         utmTerm,
         creativeTag,
-        destinationMode: postUrl.trim() ? 'PUBLIC_POST' : undefined,
-        landingPostUrl: postUrl,
-      });
+        destinationMode: DESTINATION_MODE[destination],
+        landingPostUrl: destination === 'post' ? postUrl : undefined,
+        destinationUrl: destination === 'personal' ? normalizePersonalUrl(personalUrl) : undefined,
+        botConnectionId: destination === 'bot' ? botConnectionId : undefined,
+        autoRedirect: !measureReach,
+      };
+
+      if (bulk) {
+        const items = parseBulkLines(bulkText);
+        if (items.length === 0) {
+          setError('Додайте хоча б одну назву — по одній на рядок');
+          return;
+        }
+        const res = await createTrackingLinksBulkV2Action(input, items);
+        if (res.error || !res.links) {
+          setError(res.error ?? 'Не вдалося створити посилання');
+          return;
+        }
+        setBulkResult(res.links.map((l) => ({ name: l.name ?? 'Без назви', url: `${appUrl}${l.publicPath}` })));
+        reset();
+        onCreated?.();
+        return;
+      }
+
+      const res = await createTrackingLinkV2Action(input);
       if (res.error || !res.link) {
         setError(res.error ?? 'Не вдалося створити посилання');
         return;
@@ -247,21 +322,51 @@ export function LinkBuilder({
         />
       </div>
 
-      {/* 3. Назва */}
-      <div className="mb-4">
-        <label className={labelCls} htmlFor="v2-link-name">Назва посилання</label>
-        <input
-          id="v2-link-name"
-          type="text"
-          className={field}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Літня кампанія, відео 1"
-        />
-        <p className="text-xs text-slate-500 mt-1">
-          Так посилання буде підписане у звітах.
-        </p>
-      </div>
+      {/* 3. Назва — або кілька назв одразу (S2-09) */}
+      {kind === 'tracking' && (
+        <div className="mb-3 inline-flex rounded-xl border border-slate-200 p-1 text-sm" role="group" aria-label="Скільки посилань">
+          <button type="button" aria-pressed={!bulk} onClick={() => setBulk(false)}
+            className={`rounded-lg px-3 py-1.5 ${!bulk ? 'bg-brand-600 text-white' : 'text-slate-600'}`}>
+            Одне посилання
+          </button>
+          <button type="button" aria-pressed={bulk} onClick={() => setBulk(true)}
+            className={`rounded-lg px-3 py-1.5 ${bulk ? 'bg-brand-600 text-white' : 'text-slate-600'}`}>
+            Кілька одразу
+          </button>
+        </div>
+      )}
+      {kind === 'tracking' && bulk ? (
+        <div className="mb-4">
+          <label className={labelCls} htmlFor="v2-link-bulk">Назви посилань — по одній на рядок</label>
+          <textarea
+            id="v2-link-bulk"
+            rows={5}
+            className={field}
+            value={bulkText}
+            onChange={(e) => setBulkText(e.target.value)}
+            placeholder={'Відео 1; video_1\nВідео 2; video_2\nБанер синій; banner_blue'}
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            Через «;» можна вказати креатив. Решта налаштувань нижче — спільні для всіх. До 50 посилань за раз;
+            створяться або всі, або жодне.
+          </p>
+        </div>
+      ) : (
+        <div className="mb-4">
+          <label className={labelCls} htmlFor="v2-link-name">Назва посилання</label>
+          <input
+            id="v2-link-name"
+            type="text"
+            className={field}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Літня кампанія, відео 1"
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            Так посилання буде підписане у звітах.
+          </p>
+        </div>
+      )}
 
       {/* 4. Кампанія */}
       <div className="mb-4">
@@ -389,23 +494,110 @@ export function LinkBuilder({
       {/* 6. Мітки — тільки для посилань з мітками, згорнуто */}
       {kind === 'tracking' && (
         <div className="mb-4">
-          <div className="mb-4">
-            <label className={labelCls} htmlFor="v2-post-url">
-              Конкретний допис у Telegram <span className="text-slate-400">(необов’язково)</span>
-            </label>
+          <fieldset className="mb-4">
+            <legend className={labelCls}>Куди веде посилання</legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {DESTINATIONS.map((option) => {
+                const disabled = option.value === 'bot' && activeBots.length === 0;
+                return (
+                  <label
+                    key={option.value}
+                    className={`block rounded-xl border p-3 text-sm transition ${
+                      disabled
+                        ? 'cursor-not-allowed border-slate-100 bg-slate-50'
+                        : destination === option.value
+                          ? 'cursor-pointer border-brand-500 bg-brand-50'
+                          : 'cursor-pointer border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="flex items-start gap-2">
+                      <input
+                        type="radio"
+                        name="v2-link-destination"
+                        className="mt-1"
+                        checked={destination === option.value}
+                        disabled={disabled}
+                        onChange={() => setDestination(option.value)}
+                      />
+                      <span>
+                        <span className={`block font-medium ${disabled ? 'text-slate-400' : 'text-slate-900'}`}>{option.label}</span>
+                        <span className="block text-slate-500">{option.description}</span>
+                        {disabled && (
+                          <Link href="/v2/channels#own-bot" className="mt-1 inline-block text-amber-700 underline">
+                            Підключіть бота в розділі «Канали»
+                          </Link>
+                        )}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          {destination === 'post' && (
+            <div className="mb-4">
+              <label className={labelCls} htmlFor="v2-post-url">Адреса допису</label>
+              <input
+                id="v2-post-url"
+                type="url"
+                className={field}
+                value={postUrl}
+                onChange={(e) => setPostUrl(e.target.value)}
+                placeholder="https://t.me/channel/123"
+              />
+            </div>
+          )}
+
+          {destination === 'bot' && activeBots.length > 0 && (
+            <div className="mb-4">
+              <label className={labelCls} htmlFor="v2-link-bot">Бот</label>
+              <CustomSelect
+                id="v2-link-bot"
+                value={botConnectionId}
+                onChange={setBotConnectionId}
+                options={activeBots.map((bot) => ({ value: bot.id, label: `@${bot.botUsername}` }))}
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Після /start ми знаємо, з якого кліку прийшла людина, — UTM і креатив відновлюються автоматично.
+              </p>
+            </div>
+          )}
+
+          {destination === 'personal' && (
+            <div className="mb-4">
+              <label className={labelCls} htmlFor="v2-personal-url">Особистий акаунт</label>
+              <input
+                id="v2-personal-url"
+                type="text"
+                className={field}
+                value={personalUrl}
+                onChange={(e) => setPersonalUrl(e.target.value)}
+                placeholder="@manager або https://t.me/manager"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Ми фіксуємо клік і мітки. Що відбувається далі в листуванні — не бачимо і не обіцяємо.
+              </p>
+            </div>
+          )}
+
+          <label className="mb-4 flex items-start gap-2 rounded-xl border border-slate-200 p-3 text-sm">
             <input
-              id="v2-post-url"
-              type="url"
-              className={field}
-              value={postUrl}
-              onChange={(e) => setPostUrl(e.target.value)}
-              placeholder="https://t.me/channel/123"
+              type="checkbox"
+              className="mt-1"
+              checked={measureReach}
+              onChange={(e) => setMeasureReach(e.target.checked)}
             />
-            <p className="text-xs text-slate-500 mt-1">
-              Залиште порожнім, щоб вести на канал. Якщо вкажете адресу допису, клік і мітки
-              збережуться, а користувач відкриє саме цей допис.
-            </p>
-          </div>
+            <span>
+              <span className="block font-medium text-slate-900">Перевіряти перехід у Telegram</span>
+              <span className="block text-slate-500">
+                Людина побачить коротку сторінку з кнопкою «Відкрити Telegram» — так ми чесно рахуємо, скільки
+                кліків справді дійшли. Без цього перехід миттєвий, а «Дійшли до Telegram» не вимірюється.
+                Можна змінити пізніше — адреса посилання не зміниться.
+              </span>
+            </span>
+          </label>
+
           <button
             type="button"
             onClick={() => setShowMarks((v) => !v)}
@@ -473,13 +665,34 @@ export function LinkBuilder({
         </div>
       )}
 
+      {bulkResult && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+          <p className="text-sm font-medium text-emerald-900">Створено посилань: {bulkResult.length}</p>
+          <ul className="mt-2 space-y-2">
+            {bulkResult.map((item) => (
+              <li key={item.url} className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-medium text-slate-900">{item.name}</span>
+                <span className="font-mono text-xs text-slate-700 break-all">{item.url}</span>
+                <CopyButton value={item.url} />
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3">
+            <CopyButton
+              value={bulkResult.map((item) => `${item.name}\t${item.url}`).join('\n')}
+              label="Копіювати всі"
+            />
+          </div>
+        </div>
+      )}
+
       {kind !== 'plain' && (
         <button
           type="submit"
           disabled={pending}
           className="min-h-11 w-full rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white shadow-[0_8px_20px_rgba(37,99,235,0.20)] transition hover:bg-brand-700 disabled:opacity-50 sm:w-auto"
         >
-          {pending ? 'Створюємо…' : 'Створити посилання'}
+          {pending ? 'Створюємо…' : kind === 'tracking' && bulk ? 'Створити посилання пачкою' : 'Створити посилання'}
         </button>
       )}
     </form>

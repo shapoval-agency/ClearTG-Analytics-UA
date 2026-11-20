@@ -1,8 +1,19 @@
 import { LinkRow } from './LinkRow';
-import type { LinkRowData } from './link-kind';
+import type { EditableLink, LinkRowData } from './link-kind';
+import type { BuilderBot, BuilderCampaign } from './LinkBuilder';
 
 /** Обидва типи посилань в одному списку: активні зверху, архівні окремо. */
-export function LinkList({ rows }: { rows: LinkRowData[] }) {
+export function LinkList({
+  rows,
+  campaigns,
+  bots,
+  onDuplicate,
+}: {
+  rows: LinkRowData[];
+  campaigns?: BuilderCampaign[];
+  bots?: BuilderBot[];
+  onDuplicate?: (value: EditableLink) => void;
+}) {
   const active = rows.filter((r) => r.isActive);
   const inactive = rows.filter((r) => !r.isActive);
 
@@ -11,7 +22,7 @@ export function LinkList({ rows }: { rows: LinkRowData[] }) {
       {active.length > 0 && (
         <div className="mb-6 grid gap-4 xl:grid-cols-2">
           {active.map((row) => (
-            <LinkRow key={`${row.kind}-${row.id}`} row={row} />
+            <LinkRow key={`${row.kind}-${row.id}`} row={row} campaigns={campaigns} bots={bots} onDuplicate={onDuplicate} />
           ))}
         </div>
       )}
@@ -23,7 +34,7 @@ export function LinkList({ rows }: { rows: LinkRowData[] }) {
           </h2>
           <div className="grid gap-4 xl:grid-cols-2">
             {inactive.map((row) => (
-              <LinkRow key={`${row.kind}-${row.id}`} row={row} />
+              <LinkRow key={`${row.kind}-${row.id}`} row={row} campaigns={campaigns} bots={bots} onDuplicate={onDuplicate} />
             ))}
           </div>
         </section>

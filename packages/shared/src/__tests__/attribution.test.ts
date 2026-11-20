@@ -13,6 +13,7 @@ describe('Attribution Engine', () => {
       campaignId: string | null;
       trackingLinkId: string;
       clickedAt: Date;
+      reached?: boolean | null;
     }>,
   };
 
@@ -126,6 +127,62 @@ describe('Attribution Engine', () => {
 
     expect(result.attributionType).toBe('UNKNOWN');
     expect(result.confidenceScore).toBeLessThan(0.2);
+  });
+
+  it('S2-13: ignores clicks that were measured and did not reach Telegram', () => {
+    const result = attributeSubscription({
+      ...baseInput,
+      recentClicks: [
+        // Найближчий клік точно не дійшов — він не може бути джерелом.
+        { id: 'not-reached', campaignId: 'camp-a', trackingLinkId: 'link-a',
+          clickedAt: new Date('2025-06-01T11:59:00Z'), reached: false },
+        { id: 'reached', campaignId: 'camp-b', trackingLinkId: 'link-b',
+          clickedAt: new Date('2025-06-01T11:00:00Z'), reached: true },
+      ],
+    });
+
+    expect(result.attributionType).toBe('PROBABILISTIC');
+    expect(result.clickEventId).toBe('reached');
+    expect(result.reason).toContain('1 candidates');
+  });
+
+  it('S2-13: keeps unmeasured clicks (instant redirect) as candidates', () => {
+    const result = attributeSubscription({
+      ...baseInput,
+      recentClicks: [
+        { id: 'unmeasured', campaignId: 'camp-a', trackingLinkId: 'link-a',
+          clickedAt: new Date('2025-06-01T11:50:00Z'), reached: null },
+      ],
+    });
+
+    expect(result.attributionType).toBe('PROBABILISTIC');
+    expect(result.clickEventId).toBe('unmeasured');
+  });
+
+  it('S2-13: does not invent a source when the only clicks did not reach Telegram', () => {
+    const result = attributeSubscription({
+      ...baseInput,
+      recentClicks: [
+        { id: 'not-reached', campaignId: 'camp-a', trackingLinkId: 'link-a',
+          clickedAt: new Date('2025-06-01T11:59:00Z'), reached: false },
+      ],
+    });
+
+    expect(result.attributionType).toBe('UNKNOWN');
+    expect(result.clickEventId).toBeNull();
+  });
+
+  it('S2-13: exact invite click wins even if its reach was not confirmed', () => {
+    const click = { id: 'exact', campaignId: 'camp-1', trackingLinkId: 'link-1',
+      clickedAt: new Date('2025-06-01T11:58:00Z'), reached: false };
+    const result = attributeSubscription({
+      ...baseInput,
+      inviteLinkUsed: { id: 'inv', clickEventId: 'exact', campaignId: 'camp-1',
+        trackingLinkId: 'link-1', createdAt: click.clickedAt },
+      recentClicks: [click],
+    });
+
+    expect(result.attributionType).toBe('EXACT_CLICK_INVITE');
   });
 
   it('rejects click after subscription time', () => {

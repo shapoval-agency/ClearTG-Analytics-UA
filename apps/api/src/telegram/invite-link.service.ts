@@ -35,6 +35,8 @@ export class InviteLinkService {
     campaignId: string | null;
     trackingLinkId: string;
     telegramChatId: string;
+    /** S2-15: канал зі вступом через заявки — заявка нестиме саме це посилання. */
+    createsJoinRequest?: boolean;
   }) {
     const bot = this.telegram.getBot();
     if (!bot) {
@@ -44,10 +46,14 @@ export class InviteLinkService {
 
     try {
       const label = `ct_${input.clickEventId.slice(0, 16)}`;
-      const created = await bot.api.createChatInviteLink(input.telegramChatId, {
-        name: label,
-        member_limit: 1,
-      });
+      // Telegram не дозволяє поєднувати member_limit із creates_join_request.
+      // Посилання все одно унікальне для кліку — його ніхто інший не отримує.
+      const created = await bot.api.createChatInviteLink(
+        input.telegramChatId,
+        input.createsJoinRequest
+          ? { name: label, creates_join_request: true }
+          : { name: label, member_limit: 1 },
+      );
 
       return this.prisma.inviteLink.create({
         data: {

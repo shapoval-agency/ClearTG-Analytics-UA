@@ -1,3 +1,4 @@
+import { trafficSourceLabel } from '../links/link-kind';
 import type {
   TrackingLinkReportRow,
   UnsubscribeFeedRow,
@@ -10,6 +11,7 @@ export interface PerformanceBreakdownRow {
   source: string;
   campaign: string;
   clicks: number;
+  reachTracked: number;
   reached: number;
   subscribers: number;
   unsubscribes: number;
@@ -33,11 +35,13 @@ function aggregate(
       source,
       campaign,
       clicks: 0,
+      reachTracked: 0,
       reached: 0,
       subscribers: 0,
       unsubscribes: 0,
     };
     current.clicks += row.clicks;
+    current.reachTracked += row.reachTracked ?? row.clicks;
     current.reached += row.reached;
     current.subscribers += row.subscribers;
     current.unsubscribes += row.unsubscribes;
@@ -53,6 +57,87 @@ export function buildCreativeBreakdown(rows: TrackingLinkReportRow[]) {
     const label = row.creativeTag?.trim() || row.utmContent?.trim() || 'Без мітки креативу';
     return { key: label.toLocaleLowerCase('uk-UA'), label };
   });
+}
+
+/** Вузол ієрархії S2-19. Метрики батька — завжди сума дітей. */
+export interface BreakdownNode {
+  key: string;
+  label: string;
+  clicks: number;
+  reachTracked: number;
+  reached: number;
+  subscribers: number;
+  unsubscribes: number;
+  /** Порожньо на рівні креативу. */
+  children: BreakdownNode[];
+}
+
+function emptyNode(key: string, label: string): BreakdownNode {
+  return { key, label, clicks: 0, reachTracked: 0, reached: 0, subscribers: 0, unsubscribes: 0, children: [] };
+}
+
+function addMetrics(node: BreakdownNode, row: TrackingLinkReportRow) {
+  node.clicks += row.clicks;
+  node.reachTracked += row.reachTracked ?? row.clicks;
+  node.reached += row.reached;
+  node.subscribers += row.subscribers;
+  node.unsubscribes += row.unsubscribes;
+}
+
+function sortNodes(nodes: BreakdownNode[]): BreakdownNode[] {
+  return nodes
+    .map((node) => ({ ...node, children: sortNodes(node.children) }))
+    .sort((a, b) => b.clicks - a.clicks || b.subscribers - a.subscribers);
+}
+
+/**
+ * S2-19: drill-down Джерело → Кампанія → Креатив.
+ * Джерело — платформа кампанії (Meta, Google…), без неї — utm_source.
+ * Кожне посилання потрапляє рівно в одну гілку, тож суми сходяться на всіх рівнях.
+ */
+export function buildCreativeTree(rows: TrackingLinkReportRow[]): BreakdownNode[] {
+  const sources = new Map<string, BreakdownNode & { byCampaign: Map<string, BreakdownNode & { byCreative: Map<string, BreakdownNode> }> }>();
+
+  for (const row of rows) {
+    const sourceLabel = row.adPlatform
+      ? trafficSourceLabel(row.adPlatform)
+      : row.utmSource?.trim() || 'Без джерела';
+    const campaignLabel = row.campaignName?.trim() || row.utmCampaign?.trim() || 'Без кампанії';
+    const creativeLabel = row.creativeTag?.trim() || row.utmContent?.trim() || 'Без мітки креативу';
+
+    const sourceKey = sourceLabel.toLocaleLowerCase('uk-UA');
+    let source = sources.get(sourceKey);
+    if (!source) {
+      source = { ...emptyNode(sourceKey, sourceLabel), byCampaign: new Map() };
+      sources.set(sourceKey, source);
+    }
+    const campaignKey = `${sourceKey}::${campaignLabel.toLocaleLowerCase('uk-UA')}`;
+    let campaign = source.byCampaign.get(campaignKey);
+    if (!campaign) {
+      campaign = { ...emptyNode(campaignKey, campaignLabel), byCreative: new Map() };
+      source.byCampaign.set(campaignKey, campaign);
+    }
+    const creativeKey = `${campaignKey}::${creativeLabel.toLocaleLowerCase('uk-UA')}`;
+    let creative = campaign.byCreative.get(creativeKey);
+    if (!creative) {
+      creative = emptyNode(creativeKey, creativeLabel);
+      campaign.byCreative.set(creativeKey, creative);
+    }
+
+    addMetrics(source, row);
+    addMetrics(campaign, row);
+    addMetrics(creative, row);
+  }
+
+  return sortNodes(
+    [...sources.values()].map(({ byCampaign, ...source }) => ({
+      ...source,
+      children: [...byCampaign.values()].map(({ byCreative, ...campaign }) => ({
+        ...campaign,
+        children: [...byCreative.values()],
+      })),
+    })),
+  );
 }
 
 /** S2-20: порівнюємо лише посилання, для яких справді заданий конкретний допис. */

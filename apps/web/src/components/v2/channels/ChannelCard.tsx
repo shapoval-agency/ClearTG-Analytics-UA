@@ -1,6 +1,7 @@
 import { Badge } from '@/components/v2/ui';
 import { TelegramLogo } from '@phosphor-icons/react/dist/ssr';
 import { ChannelActions } from './ChannelActions';
+import { JoinRequestSettings } from './JoinRequestSettings';
 import { deriveChannelStatus } from './channel-status';
 
 export interface ChannelListItem {
@@ -11,6 +12,9 @@ export interface ChannelListItem {
   botIsAdmin: boolean;
   /** Старий production API не повертав це поле — відрізняємо unknown від false. */
   botCanInviteUsers?: boolean;
+  /** S2-14 / S2-15. Нема в старому API. */
+  joinRequestsEnabled?: boolean;
+  autoApproveJoinRequests?: boolean;
   _count: { membershipEvents: number; clickEvents: number };
 }
 
@@ -56,6 +60,15 @@ export function ChannelCard({ channel }: { channel: ChannelListItem }) {
         <span><strong className="text-[#102044]">{channel._count.clickEvents}</strong> кліків</span>
         <span><strong className="text-[#102044]">{channel._count.membershipEvents}</strong> подій підписки</span>
       </div>
+
+      {channel.isActive && typeof channel.joinRequestsEnabled === 'boolean' && (
+        <JoinRequestSettings
+          channelId={channel.id}
+          joinRequestsEnabled={channel.joinRequestsEnabled}
+          autoApproveJoinRequests={channel.autoApproveJoinRequests ?? false}
+          botCanInviteUsers={channel.botCanInviteUsers}
+        />
+      )}
 
       <ChannelActions
         id={channel.id}

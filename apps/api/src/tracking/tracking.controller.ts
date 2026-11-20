@@ -6,6 +6,8 @@ type TrackingReply = {
 };
 import { TrackingService } from './tracking.service';
 import { CreateTrackingLinkDto } from './dto/create-tracking-link.dto';
+import { UpdateTrackingLinkDto } from './dto/update-tracking-link.dto';
+import { BulkCreateTrackingLinksDto } from './dto/bulk-create-tracking-links.dto';
 import { Public, RequiresWorkspace } from '../common/decorators/auth.decorator';
 import { WorkspaceId } from '../common/decorators/user.decorator';
 import {
@@ -227,6 +229,24 @@ export class TrackingLinksController {
   @Post()
   create(@Body() dto: CreateTrackingLinkDto, @WorkspaceId() workspaceId: string) {
     return this.tracking.createLink(workspaceId, dto);
+  }
+
+  /** S2-09: кілька посилань однією операцією (до 50). */
+  @RequiresWorkspace()
+  @Post('bulk')
+  createBulk(@Body() dto: BulkCreateTrackingLinksDto, @WorkspaceId() workspaceId: string) {
+    return this.tracking.createLinksBulk(workspaceId, dto);
+  }
+
+  /** S2-07 / S2-18: редагування без зміни адреси, каналу й історії. */
+  @RequiresWorkspace()
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateTrackingLinkDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.tracking.updateLink(workspaceId, id, dto);
   }
 
   @RequiresWorkspace()

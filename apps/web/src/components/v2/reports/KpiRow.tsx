@@ -1,6 +1,7 @@
 import { StatCard } from '@/components/v2/ui';
 import { formatPercentUk } from '@/lib/labels';
-import type { DashboardOverview } from '@/lib/api';
+import { measuredReach, type DashboardOverview } from '@/lib/api';
+import { REACH_NOT_MEASURED_HINT } from './ReachCell';
 
 /**
  * Верхній блок — рівно шість чисел з брифу, більше нічого. `reached`/
@@ -29,6 +30,8 @@ export function KpiRow({
 }) {
   const netGrowth = overview.subscribers - overview.unsubscribes;
   const hasClicks = overview.clicks > 0;
+  const reach = measuredReach(overview);
+  const previousReach = previous ? measuredReach(previous) : null;
 
   return (
     <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-[18px] border border-[#dbe4f0] bg-[#dbe4f0] shadow-[0_10px_34px_rgba(20,52,110,0.055)] lg:grid-cols-3 xl:grid-cols-6">
@@ -36,10 +39,12 @@ export function KpiRow({
         hint={previous ? countChange(overview.clicks, previous.clicks) : undefined} />
       <StatCard
         label="Дійшли до Telegram"
-        value={hasClicks ? formatPercentUk(overview.reachRate) : '—'}
-        hint={hasClicks
-          ? `${overview.reached} з ${overview.clicks} кліків${previous ? ` · ${rateChange(overview.reachRate, previous.reachRate)}` : ''}`
-          : undefined}
+        value={!hasClicks ? '—' : reach ? formatPercentUk(reach.rate) : 'Не вимірюється'}
+        hint={!hasClicks
+          ? undefined
+          : reach
+            ? `${overview.reached} з ${reach.tracked} виміряних кліків${previousReach ? ` · ${rateChange(reach.rate, previousReach.rate)}` : ''}`
+            : REACH_NOT_MEASURED_HINT}
       />
       <StatCard label="Підписки" value={overview.subscribers}
         hint={previous ? countChange(overview.subscribers, previous.subscribers) : undefined} />
