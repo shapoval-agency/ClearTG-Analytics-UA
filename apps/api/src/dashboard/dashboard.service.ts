@@ -170,6 +170,13 @@ export function buildOverviewInsights(input: {
   return insights;
 }
 
+
+/** Клік «дійшов до Telegram» — лише там, де це взагалі вимірювалось (S2-10). */
+const REACHED_WHERE = {
+  reachTracked: true,
+  telegramOpenedAt: { not: null },
+} satisfies Prisma.ClickEventWhereInput;
+
 @Injectable()
 export class DashboardService {
   constructor(
@@ -220,6 +227,7 @@ export class DashboardService {
 
     const [
       clicks,
+      reachTracked,
       reached,
       subscribers,
       unsubscribes,
@@ -236,8 +244,11 @@ export class DashboardService {
       previousCampaignSubscriptions,
     ] = await Promise.all([
       this.prisma.clickEvent.count({ where: clickWhere }),
-      // S2-12: частка кліків, що дійсно дійшли до Telegram (ClickEvent.telegramOpenedAt).
-      this.prisma.clickEvent.count({ where: { ...clickWhere, telegramOpenedAt: { not: null } } }),
+      // S2-10/S2-12: частка рахується лише серед кліків, де перехід у Telegram
+      // узагалі можна було підтвердити (reachTracked). Миттєвий редирект не
+      // вимірюється і не роздуває частку до 100%.
+      this.prisma.clickEvent.count({ where: { ...clickWhere, reachTracked: true } }),
+      this.prisma.clickEvent.count({ where: { ...clickWhere, ...REACHED_WHERE } }),
       this.prisma.membershipEvent.count({ where: subscribeWhere }),
       this.prisma.unsubscribeEvent.count({ where: unsubscribeWhere }),
       this.attribution.getAttributionStats(workspaceId, { channelId, from: opts.from, to: opts.to }),
@@ -311,7 +322,7 @@ export class DashboardService {
     ]);
 
     const clickToSubscribeRate = this.safeDivide(subscribers, clicks);
-    const reachRate = this.safeDivide(reached, clicks);
+    const reachRate = this.safeDivide(reached, reachTracked);
 
     const retention = await this.getRetentionStats(workspaceId, { channelId, from: opts.from, to: opts.to });
 
@@ -359,6 +370,7 @@ export class DashboardService {
 
     return {
       clicks,
+      reachTracked,
       reached,
       reachRate,
       subscribers,
@@ -471,9 +483,10 @@ export class DashboardService {
         };
         if (range) unsubscribedWhere.occurredAt = range;
 
-        const [clicks, reached, subscribers, unsubscribes, uniqueClickers] = await Promise.all([
+        const [clicks, reachTracked, reached, subscribers, unsubscribes, uniqueClickers] = await Promise.all([
           this.prisma.clickEvent.count({ where: clickWhere }),
-          this.prisma.clickEvent.count({ where: { ...clickWhere, telegramOpenedAt: { not: null } } }),
+          this.prisma.clickEvent.count({ where: { ...clickWhere, reachTracked: true } }),
+          this.prisma.clickEvent.count({ where: { ...clickWhere, ...REACHED_WHERE } }),
           this.prisma.attribution.count({ where: subscribedWhere }),
           this.prisma.unsubscribeEvent.count({ where: unsubscribedWhere }),
           this.countUniqueClickers(campaign.id, undefined, range),
@@ -485,8 +498,9 @@ export class DashboardService {
           adPlatform: campaign.adPlatform,
           channelTitle: campaign.channel.title,
           clicks,
+          reachTracked,
           reached,
-          reachRate: this.safeDivide(reached, clicks),
+          reachRate: this.safeDivide(reached, reachTracked),
           uniqueClickers,
           subscribers,
           unsubscribes,
@@ -529,7 +543,7 @@ export class DashboardService {
     const links = await this.prisma.trackingLink.findMany({
       where: linkWhere,
       include: {
-        campaign: { select: { name: true } },
+        campaign: { select: { name: true, adPlatform: true } },
         channel: { select: { title: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -556,9 +570,10 @@ export class DashboardService {
         };
         if (range) unsubscribedWhere.occurredAt = range;
 
-        const [clicks, reached, subscribers, unsubscribes, uniqueClickers] = await Promise.all([
+        const [clicks, reachTracked, reached, subscribers, unsubscribes, uniqueClickers] = await Promise.all([
           this.prisma.clickEvent.count({ where: clickWhere }),
-          this.prisma.clickEvent.count({ where: { ...clickWhere, telegramOpenedAt: { not: null } } }),
+          this.prisma.clickEvent.count({ where: { ...clickWhere, reachTracked: true } }),
+          this.prisma.clickEvent.count({ where: { ...clickWhere, ...REACHED_WHERE } }),
           this.prisma.attribution.count({ where: subscribedWhere }),
           this.prisma.unsubscribeEvent.count({ where: unsubscribedWhere }),
           this.countUniqueClickers(undefined, link.id, range),
@@ -569,10 +584,12 @@ export class DashboardService {
           slug: link.slug,
           name: link.name,
           campaignName: link.campaign?.name ?? null,
+          adPlatform: link.campaign?.adPlatform ?? null,
           channelTitle: link.channel.title,
           clicks,
+          reachTracked,
           reached,
-          reachRate: this.safeDivide(reached, clicks),
+          reachRate: this.safeDivide(reached, reachTracked),
           uniqueClickers,
           subscribers,
           unsubscribes,
@@ -586,6 +603,53 @@ export class DashboardService {
           creativeTag: link.creativeTag,
           postNumber: link.postNumber,
           landingPostUrl: link.landingPostUrl,
+        };
+      }),
+    );
+  }
+
+  /**
+   * S2-04: «клік vs старт» для посилань, що ведуть у бота клієнта.
+   * Клік — людина натиснула посилання; старт — справді запустила діалог (/start).
+   * Старт рахується за кліком, з якого прийшов (BotStartEvent.clickEventId),
+   * тому період фільтрується за часом кліку — обидва числа з тієї самої вибірки.
+   */
+  async getBotLinkReports(workspaceId: string, opts: ReportFilterOpts = {}) {
+    const range = kyivDateRange(opts.from, opts.to);
+    const links = await this.prisma.trackingLink.findMany({
+      where: {
+        workspaceId,
+        destinationMode: 'CLIENT_BOT_START',
+        ...(opts.channelId ? { channelId: opts.channelId } : {}),
+      },
+      include: {
+        campaign: { select: { name: true } },
+        botConnection: { select: { botUsername: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return Promise.all(
+      links.map(async (link) => {
+        const clickWhere: Prisma.ClickEventWhereInput = {
+          trackingLinkId: link.id,
+          ...(range ? { clickedAt: range } : {}),
+        };
+        const [clicks, starts, blocked] = await Promise.all([
+          this.prisma.clickEvent.count({ where: clickWhere }),
+          this.prisma.botStartEvent.count({ where: { clickEvent: clickWhere } }),
+          this.prisma.botStartEvent.count({ where: { clickEvent: clickWhere, status: 'BLOCKED' } }),
+        ]);
+        return {
+          id: link.id,
+          name: link.name,
+          campaignName: link.campaign?.name ?? null,
+          botUsername: link.botConnection?.botUsername ?? null,
+          isActive: link.isActive,
+          clicks,
+          starts,
+          blocked,
+          startRate: this.safeDivide(starts, clicks),
         };
       }),
     );
@@ -907,6 +971,7 @@ export class DashboardService {
             reason: attr.reason,
             campaign: attr.campaign?.name ?? null,
             trackingLink: attr.trackingLink?.slug ?? null,
+            trackingLinkName: attr.trackingLink?.name ?? null,
             utm: {
               source: attr.clickEvent?.utmSource,
               medium: attr.clickEvent?.utmMedium,
@@ -918,6 +983,7 @@ export class DashboardService {
             postNumber: attr.trackingLink?.postNumber ?? null,
             clickedAt: attr.clickEvent?.clickedAt ?? null,
             telegramOpenedAt: attr.clickEvent?.telegramOpenedAt ?? null,
+            reachTracked: attr.clickEvent?.reachTracked ?? null,
           }
         : null,
       unsubscribes: profile.unsubscribeEvents,

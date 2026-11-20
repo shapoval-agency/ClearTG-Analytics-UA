@@ -4,6 +4,34 @@
 
 ---
 
+## ⚡ Обновление 2026-11-20 (2): этап 02 доделан
+
+Все 25 задач этапа 02 реализованы в `/v2` — статусы в [`MIGRATION_MAP.md`](./MIGRATION_MAP.md). Ветка `stage-02-completion`.
+
+**Исправлено попутно:**
+- `POST /api/tracking-links` не проверял, что канал и кампания из этого кабинета; `GET /api/channels/:id` и `GET /api/campaigns/:id` отдавали чужие данные по id — теперь всё скоупится по workspace.
+- Отключение бота клиента удаляло запись, а каскад стирал всю историю `BotStartEvent` — теперь деактивация.
+- «Дошёл до Telegram» для мгновенного редиректа ставился сервером → доля всегда ~100%. Теперь `ClickEvent.reachTracked=false` и в UI «не вимірюється» (решение владельца: честно + переключатель S2-11).
+- Ссылки бота вели на `/dashboard`, `/channels`, `/subscribers/:id` старого кабинета.
+- `dev-tunnel` регистрировал webhook без `allowed_updates` → Telegram не слал `chat_member`.
+
+**Перед деплоем (обязательно):**
+1. `prisma db push` — 3 новых поля с дефолтами: `channels.join_requests_enabled`, `channels.auto_approve_join_requests`, `click_events.reach_tracked`. На локальной БД 2026-11-20 не применено (нужен `--accept-data-loss` из-за ранее не применённого unique по `membership_events(workspace_id, raw_update_id)` — сначала проверить дубли).
+2. Перерегистрировать production webhook с `allowed_updates` = `TELEGRAM_ALLOWED_UPDATES` из `apps/api/src/telegram/telegram.service.ts` (добавился `chat_join_request`). Без этого S2-14/S2-15 не получат заявки.
+3. Сначала API, потом web: web переживает старый API (новые поля опциональны), но не наоборот для `/bot-links`.
+
+**Необязательно — история reach.** Старые клики мгновенных ссылок остаются с `reach_tracked=true` и `telegram_opened_at`, проставленным сервером. Чтобы исключить их из доли «дійшли»:
+```sql
+UPDATE click_events c SET reach_tracked = false
+FROM tracking_links t
+WHERE c.tracking_link_id = t.id AND t.auto_redirect = true;
+```
+(приближение: считает, что режим ссылки не менялся.)
+
+**Не проверено вживую:** UI после логина (локальный staging-логин 401), реальные заявки в закрытый канал и бот клиента — нужен Telegram.
+
+---
+
 ## ⚡ Обновление 2026-11-20: `/v2` — главный кабинет, старый — в архиве
 
 - `/`, вход (magic link, staging) и онбординг теперь ведут на **`/v2`**. В шапке `/v2` есть ссылка «Старий кабінет» → `/dashboard`.

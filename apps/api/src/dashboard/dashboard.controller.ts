@@ -60,6 +60,18 @@ export class DashboardController {
     return this.dashboard.getTrackingLinkReports(workspaceId, { from, to, channelId });
   }
 
+  /** S2-04: клік vs старт по посиланнях у бота. */
+  @RequiresWorkspace()
+  @Get('bot-links')
+  botLinks(
+    @WorkspaceId() workspaceId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+  ) {
+    return this.dashboard.getBotLinkReports(workspaceId, { from, to, channelId });
+  }
+
   @RequiresWorkspace()
   @Get('unsubscribe-timing')
   unsubscribeTiming(

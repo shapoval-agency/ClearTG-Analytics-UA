@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Card, EmptyState } from '@/components/v2/ui';
 import { formatPercentUk } from '@/lib/labels';
+import { ReachCell } from './ReachCell';
 import type { TrackingLinkReportRow } from '@/lib/api';
 
 /** «Посилання» — розріз по кожному трекінговому посиланню окремо, а не по кампанії. */
@@ -58,8 +59,7 @@ export function LinksTable({ rows }: { rows: TrackingLinkReportRow[] }) {
                 </td>
                 <td className="py-2.5 px-3 text-right tabular-nums">{row.clicks}</td>
                 <td className="py-2.5 px-3 text-right tabular-nums">
-                  <p>{row.reached}</p>
-                  <p className="text-xs text-slate-400">{row.clicks > 0 ? formatPercentUk(row.reachRate) : '—'}</p>
+                  <ReachCell row={row} />
                 </td>
                 <td className="py-2.5 px-3 text-right tabular-nums">{row.subscribers}</td>
                 <td className="py-2.5 px-3 text-right tabular-nums">

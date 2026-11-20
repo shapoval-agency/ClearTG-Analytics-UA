@@ -7,6 +7,7 @@ import {
   type TrackingLinkReportRow,
   type UnsubscribeFeedRow,
   type UnsubscribeTimingReport,
+  type BotLinkReportRow,
 } from '@/lib/api';
 import { PageHeader, ErrorState, DisconnectedState, EmptyState } from '@/components/v2/ui';
 import type { ChannelListItem } from '@/components/v2/channels/ChannelCard';
@@ -18,8 +19,10 @@ import { resolvePeriod } from '@/components/v2/reports/period';
 import { AttributionQuality } from '@/components/v2/reports/AttributionQuality';
 import { PerformanceBreakdown } from '@/components/v2/reports/PerformanceBreakdown';
 import { UnsubscribeTiming } from '@/components/v2/reports/UnsubscribeTiming';
+import { CreativeTree } from '@/components/v2/reports/CreativeTree';
+import { BotLinksReport } from '@/components/v2/reports/BotLinksReport';
 import {
-  buildCreativeBreakdown,
+  buildCreativeTree,
   buildLandingPostBreakdown,
   buildUnsubscribeTimingFromFeed,
 } from '@/components/v2/reports/report-breakdowns';
@@ -78,11 +81,12 @@ export default async function V2ReportsPage({
   let campaigns: CampaignReportRow[] = [];
   let links: TrackingLinkReportRow[] = [];
   let unsubscribeTiming: UnsubscribeTimingReport | null = null;
+  let botLinks: BotLinkReportRow[] = [];
   let failed = false;
   let sessionExpired = false;
 
   try {
-    [channels, overview, campaigns, links, previousOverview, unsubscribeTiming] = await Promise.all([
+    [channels, overview, campaigns, links, previousOverview, unsubscribeTiming, botLinks] = await Promise.all([
       api<ChannelListItem[]>('/api/channels'),
       api<DashboardOverview>(`/api/dashboard/overview${query}`),
       api<CampaignReportRow[]>(`/api/dashboard/campaigns${query}`),
@@ -98,6 +102,8 @@ export default async function V2ReportsPage({
         const rows = await api<UnsubscribeFeedRow[]>(`/api/dashboard/unsubscribes${feedQuery}`);
         return buildUnsubscribeTimingFromFeed(rows);
       }),
+      // S2-04. Старий API без цього endpoint — просто без блоку, а не помилка всього розділу.
+      api<BotLinkReportRow[]>(`/api/dashboard/bot-links${query}`).catch(() => []),
     ]);
   } catch (err) {
     if (err instanceof AuthError) sessionExpired = true;
@@ -179,7 +185,7 @@ export default async function V2ReportsPage({
     0,
     overview.subscribers - campaigns.reduce((sum, c) => sum + c.subscribers, 0),
   );
-  const creativeRows = buildCreativeBreakdown(links);
+  const creativeTree = buildCreativeTree(links);
   const landingPostRows = buildLandingPostBreakdown(links);
 
   return (
@@ -203,14 +209,7 @@ export default async function V2ReportsPage({
               totalSubscribers={overview.subscribers}
             />
             <LinksTable rows={links} />
-            <PerformanceBreakdown
-              title="Креативи"
-              hint="Від джерела й кампанії до конкретного оголошення"
-              primaryHeading="Креатив"
-              emptyTitle="Креативи ще не розмічені"
-              emptyDescription="Додайте creative_tag або utm_content у посилання — і тут буде видно, яке оголошення приводить якісніших підписників."
-              rows={creativeRows}
-            />
+            <CreativeTree nodes={creativeTree} />
             <PerformanceBreakdown
               title="Посадкові дописи"
               hint="Порівняння конверсії конкретних Telegram-дописів"
@@ -219,6 +218,7 @@ export default async function V2ReportsPage({
               emptyDescription="Вкажіть URL посадкового допису в конструкторі посилання, щоб порівнювати їхню конверсію."
               rows={landingPostRows}
             />
+            <BotLinksReport rows={botLinks} />
             {unsubscribeTiming && <UnsubscribeTiming report={unsubscribeTiming} />}
             <AttributionQuality overview={overview} />
           </div>

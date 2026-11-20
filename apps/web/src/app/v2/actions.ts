@@ -241,8 +241,10 @@ export async function createCampaignV2Action(data: {
   return { error: null, campaign };
 }
 
-/** Посилання з мітками. */
-export async function createTrackingLinkV2Action(data: {
+/** Куди веде посилання з мітками. */
+export type LinkDestination = 'INVITE_LINK' | 'PUBLIC_POST' | 'CLIENT_BOT_START' | 'PERSONAL_CHAT';
+
+export interface TrackingLinkInput {
   channelId: string;
   campaignId?: string;
   name?: string;
@@ -252,28 +254,43 @@ export async function createTrackingLinkV2Action(data: {
   utmContent?: string;
   utmTerm?: string;
   creativeTag?: string;
-  destinationMode?: 'INVITE_LINK' | 'PUBLIC_POST';
+  destinationMode?: LinkDestination;
   landingPostUrl?: string;
-}) {
-  const headers = await channelHeaders(true);
-  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', link: null };
+  /** S2-05: https://t.me/username особистого акаунта. */
+  destinationUrl?: string;
+  /** S2-03: підключений бот клієнта. */
+  botConnectionId?: string;
+  /** S2-11: false — сторінка з кнопкою, перехід у Telegram вимірюється. */
+  autoRedirect?: boolean;
+}
 
-  // Порожні рядки не відправляємо — інакше в БД осядуть порожні мітки.
-  const payload: Record<string, string> = { channelId: data.channelId };
-  for (const key of [
-    'campaignId', 'name', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm',
-    'creativeTag', 'destinationMode', 'landingPostUrl',
-  ] as const) {
+const LINK_STRING_KEYS = [
+  'channelId', 'campaignId', 'name', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm',
+  'creativeTag', 'destinationMode', 'landingPostUrl', 'destinationUrl', 'botConnectionId',
+] as const;
+
+/** Порожні рядки не відправляємо — інакше в БД осядуть порожні мітки. */
+function linkPayload(data: TrackingLinkInput) {
+  const payload: Record<string, string | boolean> = {};
+  for (const key of LINK_STRING_KEYS) {
     const value = data[key]?.trim();
     if (value) payload[key] = value;
   }
+  if (data.autoRedirect !== undefined) payload.autoRedirect = data.autoRedirect;
+  return payload;
+}
+
+/** Посилання з мітками. */
+export async function createTrackingLinkV2Action(data: TrackingLinkInput) {
+  const headers = await channelHeaders(true);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', link: null };
 
   let res: Response;
   try {
     res = await fetch(`${API_URL}/api/tracking-links`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload),
+      body: JSON.stringify(linkPayload(data)),
     });
   } catch {
     return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.', link: null };
@@ -286,6 +303,137 @@ export async function createTrackingLinkV2Action(data: {
   const link = (await res.json()) as { publicPath: string; slug: string };
   revalidatePath('/v2/links');
   return { error: null, link };
+}
+
+/** S2-09: кілька посилань однією операцією — або всі, або жодного. */
+export async function createTrackingLinksBulkV2Action(
+  base: TrackingLinkInput,
+  items: Array<{ name: string; creativeTag?: string }>,
+) {
+  const headers = await channelHeaders(true);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', links: null };
+
+  const cleanItems = items
+    .map((item) => ({ name: item.name.trim(), creativeTag: item.creativeTag?.trim() || undefined }))
+    .filter((item) => item.name);
+  if (cleanItems.length === 0) return { error: 'Додайте хоча б одну назву посилання', links: null };
+  if (cleanItems.length > 50) return { error: 'За раз можна створити до 50 посилань', links: null };
+
+  const { name: _ignored, ...shared } = linkPayload(base);
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/tracking-links/bulk`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ base: shared, items: cleanItems }),
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.', links: null };
+  }
+  if (!res.ok) {
+    return { error: await readError(res, 'Не вдалося створити посилання'), links: null };
+  }
+  const links = (await res.json()) as Array<{ publicPath: string; name: string | null }>;
+  revalidatePath('/v2/links');
+  return { error: null, links };
+}
+
+/**
+ * S2-07 / S2-18: редагування. `null` очищає поле. Адреса, канал і історія
+ * не змінюються — бекенд не приймає ці поля.
+ */
+export async function updateTrackingLinkV2Action(
+  id: string,
+  data: Partial<Record<Exclude<(typeof LINK_STRING_KEYS)[number], 'channelId'>, string | null>> & {
+    autoRedirect?: boolean;
+  },
+) {
+  const headers = await channelHeaders(true);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.' };
+
+  const payload: Record<string, string | boolean | null> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    payload[key] = typeof value === 'string' ? value.trim() || null : value;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/tracking-links/${id}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.' };
+  }
+  if (!res.ok) return { error: await readError(res, 'Не вдалося зберегти зміни') };
+
+  revalidatePath('/v2/links');
+  revalidatePath('/v2/reports');
+  return { error: null };
+}
+
+/* ─── Бот клієнта (S2-02) ─────────────────────────────────────────── */
+
+export async function connectClientBotV2Action(token: string) {
+  const headers = await channelHeaders(true);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.' };
+  const clean = token.trim();
+  if (clean.length < 20) return { error: 'Вставте повний токен бота від @BotFather' };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/client-bots`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ token: clean }),
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.' };
+  }
+  if (!res.ok) return { error: await readError(res, 'Не вдалося підключити бота') };
+
+  revalidatePath('/v2/channels');
+  revalidatePath('/v2/links');
+  return { error: null };
+}
+
+export async function disconnectClientBotV2Action(id: string) {
+  const headers = await channelHeaders();
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.' };
+
+  const res = await fetch(`${API_URL}/api/client-bots/${id}`, { method: 'DELETE', headers });
+  if (!res.ok) return { error: await readError(res, 'Не вдалося відключити бота') };
+
+  revalidatePath('/v2/channels');
+  revalidatePath('/v2/links');
+  return { error: null };
+}
+
+/* ─── Заявки на вступ (S2-14 / S2-15) ─────────────────────────────── */
+
+export async function updateJoinRequestSettingsV2Action(
+  channelId: string,
+  data: { joinRequestsEnabled?: boolean; autoApproveJoinRequests?: boolean },
+) {
+  const headers = await channelHeaders(true);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.' };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/channels/${channelId}/join-requests`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(data),
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.' };
+  }
+  if (!res.ok) return { error: await readError(res, 'Не вдалося зберегти налаштування') };
+
+  revalidatePath('/v2/channels');
+  return { error: null };
 }
 
 /**

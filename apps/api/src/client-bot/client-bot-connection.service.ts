@@ -26,9 +26,22 @@ export class ClientBotConnectionService {
     }
 
     const tokenEnc = this.crypto.encrypt(token);
-    const connection = await this.prisma.telegramBotConnection.create({
-      data: { workspaceId, botUsername: username, tokenEnc, isActive: true },
+    // Повторне підключення того самого бота повертає попередній запис —
+    // історія стартів і посилання на бота лишаються з ним.
+    const existing = await this.prisma.telegramBotConnection.findFirst({
+      where: { workspaceId, botUsername: username },
     });
+    if (existing?.isActive) {
+      throw new BadRequestException(`Бот @${username} уже підключений.`);
+    }
+    const connection = existing
+      ? await this.prisma.telegramBotConnection.update({
+          where: { id: existing.id },
+          data: { tokenEnc, isActive: true, lastError: null, lastErrorAt: null },
+        })
+      : await this.prisma.telegramBotConnection.create({
+          data: { workspaceId, botUsername: username, tokenEnc, isActive: true },
+        });
 
     await this.runtime.startBot(connection.id, token);
 
@@ -47,8 +60,13 @@ export class ClientBotConnectionService {
     const row = await this.prisma.telegramBotConnection.findFirst({ where: { id, workspaceId } });
     if (!row) throw new NotFoundException('Bot connection not found');
 
+    // Не DELETE: BotStartEvent має onDelete: Cascade, а посилання — SetNull.
+    // Видалення стерло б історію стартів і відв'язало б посилання від бота.
     await this.runtime.stopBot(id);
-    await this.prisma.telegramBotConnection.delete({ where: { id } });
+    await this.prisma.telegramBotConnection.update({
+      where: { id },
+      data: { isActive: false },
+    });
     return { ok: true };
   }
 

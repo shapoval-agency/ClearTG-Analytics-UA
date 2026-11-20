@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TrackingLinkReportRow, UnsubscribeFeedRow } from '@/lib/api';
 import {
+  buildCreativeTree,
   buildCreativeBreakdown,
   buildLandingPostBreakdown,
   buildUnsubscribeTimingFromFeed,
@@ -51,5 +52,30 @@ describe('report breakdowns', () => {
     expect(result.total).toBe(5);
     expect(result.unknown).toBe(1);
     expect(Object.values(result.buckets).map((bucket) => bucket.count)).toEqual([1, 1, 1, 1]);
+  });
+
+  it('S2-19: будує ієрархію джерело → кампанія → креатив зі збіжними сумами', () => {
+    const tree = buildCreativeTree([
+      link({ id: 'a', adPlatform: 'META', campaignName: 'Launch', creativeTag: 'video-1', clicks: 10, reached: 4, reachTracked: 5, subscribers: 3 }),
+      link({ id: 'b', adPlatform: 'META', campaignName: 'Launch', creativeTag: 'video-2', clicks: 6, reached: 0, reachTracked: 0, subscribers: 1 }),
+      link({ id: 'c', adPlatform: 'META', campaignName: 'Retarget', creativeTag: 'video-1', clicks: 4, subscribers: 2 }),
+      link({ id: 'd', adPlatform: 'GOOGLE', campaignName: 'Search', creativeTag: null, utmContent: null, clicks: 30, subscribers: 5 }),
+    ]);
+
+    expect(tree.map((n) => n.label)).toEqual(['Google Ads', 'Meta Ads']);
+    const meta = tree[1];
+    expect(meta.clicks).toBe(20);
+    expect(meta.subscribers).toBe(6);
+    expect(meta.children.map((c) => c.label)).toEqual(['Launch', 'Retarget']);
+    const launch = meta.children[0];
+    expect(launch.children.map((c) => c.label)).toEqual(['video-1', 'video-2']);
+    expect(launch.clicks).toBe(launch.children.reduce((sum, c) => sum + c.clicks, 0));
+    expect(launch.reachTracked).toBe(5);
+    expect(tree[0].children[0].children[0].label).toBe('Без мітки креативу');
+  });
+
+  it('S2-19: без платформи кампанії джерелом стає utm_source', () => {
+    const tree = buildCreativeTree([link({ adPlatform: null, utmSource: 'partner_x' })]);
+    expect(tree[0].label).toBe('partner_x');
   });
 });

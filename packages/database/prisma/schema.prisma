@@ -121,6 +121,10 @@ model Channel {
   botIsAdmin      Boolean  @default(false) @map("bot_is_admin")
   botCanInviteUsers Boolean @default(false) @map("bot_can_invite_users")
   botStatusCheckedAt DateTime? @map("bot_status_checked_at")
+  // S2-14/S2-15: канал зі вступом через заявки. Per-click invite тоді створюється
+  // з creates_join_request, щоб заявка несла точне джерело кліку.
+  joinRequestsEnabled     Boolean @default(false) @map("join_requests_enabled")
+  autoApproveJoinRequests Boolean @default(false) @map("auto_approve_join_requests")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -333,6 +337,10 @@ model ClickEvent {
   geoCountry      String?  @map("geo_country")
   geoRegion       String?  @map("geo_region")
   telegramOpenedAt DateTime? @map("telegram_opened_at")
+  // S2-10/S2-11: чи міг цей клік узагалі підтвердити перехід у Telegram.
+  // false — миттєвий редирект без сторінки: факт відкриття Telegram не вимірюється
+  // і не входить у частку «дійшли до Telegram».
+  reachTracked    Boolean   @default(true) @map("reach_tracked")
 
   // Consent snapshot at click time
   consentSnapshot Json     @map("consent_snapshot")

@@ -12,10 +12,14 @@ import {
   DEFAULT_CONSENT,
   resolveDefaultLinkMode,
   validateLinkModeForPlatform,
+  isPaidAdPlatform,
   getPublicLinkPath,
   type LinkMode,
 } from '@cleartg/shared';
 import { CreateTrackingLinkDto } from './dto/create-tracking-link.dto';
+import { UpdateTrackingLinkDto } from './dto/update-tracking-link.dto';
+import { BulkCreateTrackingLinksDto } from './dto/bulk-create-tracking-links.dto';
+import { Prisma } from '@cleartg/database';
 import type { LandingPageContext } from './tracking-html';
 import { resolveFrontendUrl } from '../common/public-app-url';
 
@@ -37,6 +41,33 @@ export interface RecordClickResult {
   channelTitle: string;
 }
 
+type LinkInput = Pick<
+  CreateTrackingLinkDto,
+  | 'channelId'
+  | 'campaignId'
+  | 'botConnectionId'
+  | 'linkMode'
+  | 'destinationMode'
+  | 'landingPostUrl'
+  | 'destinationUrl'
+  | 'postNumber'
+>;
+
+/** https://t.me/username — особистий акаунт (S2-05). */
+export function isTelegramUsernameUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' &&
+      url.hostname.toLowerCase() === 't.me' &&
+      /^\/[A-Za-z][A-Za-z0-9_]{3,31}\/?$/.test(url.pathname) &&
+      !url.search
+    );
+  } catch {
+    return false;
+  }
+}
+
 @Injectable()
 export class TrackingService {
   constructor(
@@ -46,45 +77,74 @@ export class TrackingService {
     private inviteLinks: InviteLinkService,
   ) {}
 
-  async createLink(workspaceId: string, dto: CreateTrackingLinkDto) {
-    const campaign = dto.campaignId
-      ? await this.prisma.campaign.findFirst({
-          where: { id: dto.campaignId, workspaceId },
-          select: { adPlatform: true },
-        })
-      : null;
+  /**
+   * Єдина перевірка вхідних даних посилання — для створення, редагування й
+   * масового створення. Повертає вже нормалізовані значення.
+   *
+   * Канал і кампанія мають належати цьому кабінету: раніше `channelId` не
+   * перевірявся, і посилання можна було прив'язати до чужого каналу.
+   */
+  private async validateLinkInput(
+    workspaceId: string,
+    input: LinkInput,
+    existingLinkMode?: LinkMode,
+  ): Promise<{ linkMode: LinkMode }> {
+    const channel = await this.prisma.channel.findFirst({
+      where: { id: input.channelId, workspaceId },
+      select: { id: true },
+    });
+    if (!channel) throw new BadRequestException('Канал не знайдено в цьому кабінеті.');
 
-    if (dto.campaignId && !campaign) {
-      throw new BadRequestException('Campaign not found in workspace');
+    let platform: string | null = null;
+    if (input.campaignId) {
+      const campaign = await this.prisma.campaign.findFirst({
+        where: { id: input.campaignId, workspaceId },
+        select: { adPlatform: true, channelId: true },
+      });
+      if (!campaign) throw new BadRequestException('Кампанію не знайдено в цьому кабінеті.');
+      if (campaign.channelId !== input.channelId) {
+        throw new BadRequestException('Кампанія належить іншому каналу — оберіть кампанію цього каналу.');
+      }
+      platform = campaign.adPlatform;
     }
 
-    if (dto.botConnectionId) {
+    const destinationMode = input.destinationMode ?? 'INVITE_LINK';
+
+    if (destinationMode === 'CLIENT_BOT_START' && !input.botConnectionId) {
+      throw new BadRequestException('Оберіть підключеного бота, куди вестиме посилання.');
+    }
+    if (input.botConnectionId) {
       const botConnection = await this.prisma.telegramBotConnection.findFirst({
-        where: { id: dto.botConnectionId, workspaceId },
+        where: { id: input.botConnectionId, workspaceId },
+        select: { isActive: true },
       });
       if (!botConnection) {
-        throw new BadRequestException('Bot connection not found in workspace');
+        throw new BadRequestException('Бота не знайдено в цьому кабінеті.');
+      }
+      if (destinationMode === 'CLIENT_BOT_START' && !botConnection.isActive) {
+        throw new BadRequestException('Цей бот відключений. Перепідключіть його в розділі «Канали».');
       }
     }
 
-    const platform = campaign?.adPlatform ?? null;
-    const linkMode: LinkMode = dto.linkMode ?? resolveDefaultLinkMode(platform);
-    const validation = validateLinkModeForPlatform(linkMode, platform);
-    if (!validation.valid) {
-      throw new BadRequestException(validation.reason);
+    if (destinationMode === 'PERSONAL_CHAT') {
+      if (!input.destinationUrl || !isTelegramUsernameUrl(input.destinationUrl)) {
+        throw new BadRequestException(
+          'Вкажіть особистий акаунт у форматі https://t.me/username.',
+        );
+      }
     }
 
-    if (dto.destinationMode === 'PUBLIC_POST' && !dto.postNumber && !dto.landingPostUrl) {
+    if (destinationMode === 'PUBLIC_POST' && !input.postNumber && !input.landingPostUrl) {
       // Без жодного з двох — посилання мовчки відкриє канал цілком, а користувач
       // думатиме, що веде на конкретний пост. Краще відмовити одразу.
       throw new BadRequestException(
         'Для переходу на конкретний пост вкажіть його номер (або повне посилання на пост).',
       );
     }
-    if (dto.destinationMode === 'PUBLIC_POST' && dto.landingPostUrl) {
+    if (destinationMode === 'PUBLIC_POST' && input.landingPostUrl) {
       let postUrl: URL;
       try {
-        postUrl = new URL(dto.landingPostUrl);
+        postUrl = new URL(input.landingPostUrl);
       } catch {
         throw new BadRequestException('Вкажіть коректне посилання на допис у Telegram.');
       }
@@ -93,35 +153,155 @@ export class TrackingService {
       }
     }
 
-    const slug = generateSlug(10);
+    // Режим (/l/ чи /r/) вшитий в адресу, яка вже може стояти в рекламі, тож
+    // при редагуванні він не змінюється. Перевіряємо лише головне правило:
+    // коротке посилання не можна віддати під платний трафік.
+    if (existingLinkMode) {
+      if (existingLinkMode === 'SHORTLINK' && isPaidAdPlatform(platform)) {
+        throw new BadRequestException(
+          'Це коротке посилання не можна віддати під Meta, Google чи TikTok — для платної реклами потрібна сторінка переходу. Створіть нове посилання під цю кампанію.',
+        );
+      }
+      return { linkMode: existingLinkMode };
+    }
+
+    const linkMode: LinkMode = input.linkMode ?? resolveDefaultLinkMode(platform as never);
+    const validation = validateLinkModeForPlatform(linkMode, platform as never);
+    if (!validation.valid) throw new BadRequestException(validation.reason);
+
+    return { linkMode };
+  }
+
+  private linkData(dto: CreateTrackingLinkDto, linkMode: LinkMode) {
+    return {
+      channelId: dto.channelId,
+      campaignId: dto.campaignId,
+      botConnectionId: dto.botConnectionId,
+      name: dto.name,
+      linkMode,
+      landingTitle: dto.landingTitle,
+      landingDescription: dto.landingDescription,
+      destinationMode: dto.destinationMode ?? 'INVITE_LINK',
+      landingPostUrl: dto.landingPostUrl,
+      destinationUrl: dto.destinationUrl,
+      autoRedirect: dto.autoRedirect ?? true,
+      redirectDelayMs: dto.redirectDelayMs ?? 0,
+      usePerClickInvite: dto.usePerClickInvite ?? true,
+      utmSource: dto.utmSource,
+      utmMedium: dto.utmMedium,
+      utmCampaign: dto.utmCampaign,
+      utmContent: dto.utmContent,
+      utmTerm: dto.utmTerm,
+      postNumber: dto.postNumber,
+      creativeTag: dto.creativeTag,
+    } satisfies Omit<Prisma.TrackingLinkUncheckedCreateInput, 'workspaceId' | 'slug'>;
+  }
+
+  async createLink(workspaceId: string, dto: CreateTrackingLinkDto) {
+    const { linkMode } = await this.validateLinkInput(workspaceId, dto);
+
     const link = await this.prisma.trackingLink.create({
-      data: {
-        workspaceId,
-        channelId: dto.channelId,
-        campaignId: dto.campaignId,
-        botConnectionId: dto.botConnectionId,
-        slug,
-        name: dto.name,
-        linkMode,
-        landingTitle: dto.landingTitle,
-        landingDescription: dto.landingDescription,
-        destinationMode: dto.destinationMode ?? 'INVITE_LINK',
-        landingPostUrl: dto.landingPostUrl,
-        destinationUrl: dto.destinationUrl,
-        autoRedirect: dto.autoRedirect ?? true,
-        redirectDelayMs: dto.redirectDelayMs ?? 0,
-        usePerClickInvite: dto.usePerClickInvite ?? true,
-        utmSource: dto.utmSource,
-        utmMedium: dto.utmMedium,
-        utmCampaign: dto.utmCampaign,
-        utmContent: dto.utmContent,
-        utmTerm: dto.utmTerm,
-        postNumber: dto.postNumber,
-        creativeTag: dto.creativeTag,
-      },
+      data: { workspaceId, slug: generateSlug(10), ...this.linkData(dto, linkMode) },
       include: {
         channel: { select: { title: true } },
         campaign: { select: { name: true, adPlatform: true } },
+      },
+    });
+
+    return {
+      ...link,
+      publicPath: getPublicLinkPath(link.linkMode as LinkMode, link.slug),
+    };
+  }
+
+  /**
+   * S2-09: пачка посилань однією операцією. Спільні налаштування
+   * перевіряються один раз, а всі посилання створюються в одній транзакції —
+   * або всі, або жодного.
+   */
+  async createLinksBulk(workspaceId: string, dto: BulkCreateTrackingLinksDto) {
+    const { linkMode } = await this.validateLinkInput(workspaceId, dto.base);
+
+    const names = dto.items.map((item) => item.name.trim());
+    if (names.some((name) => !name)) {
+      throw new BadRequestException('У кожного посилання має бути назва.');
+    }
+    if (new Set(names.map((n) => n.toLocaleLowerCase('uk-UA'))).size !== names.length) {
+      throw new BadRequestException('Назви посилань у пачці повторюються — зробіть їх різними.');
+    }
+
+    const links = await this.prisma.$transaction(
+      dto.items.map((item, index) =>
+        this.prisma.trackingLink.create({
+          data: {
+            workspaceId,
+            slug: generateSlug(10),
+            ...this.linkData(
+              {
+                ...dto.base,
+                name: names[index],
+                creativeTag: item.creativeTag?.trim() || dto.base.creativeTag,
+                utmContent: item.utmContent?.trim() || dto.base.utmContent,
+              },
+              linkMode,
+            ),
+          },
+        }),
+      ),
+    );
+
+    return links.map((link) => ({
+      ...link,
+      publicPath: getPublicLinkPath(link.linkMode as LinkMode, link.slug),
+    }));
+  }
+
+  /**
+   * S2-07 / S2-18: редагування без втрати історії. Адреса, канал і режим
+   * посилання не змінюються (див. UpdateTrackingLinkDto), тому вже запущена
+   * реклама продовжує працювати, а історичні кліки лишаються з цим посиланням.
+   */
+  async updateLink(workspaceId: string, id: string, dto: UpdateTrackingLinkDto) {
+    const existing = await this.prisma.trackingLink.findFirst({ where: { id, workspaceId } });
+    if (!existing) throw new NotFoundException('Посилання не знайдено');
+
+    const changes: Prisma.TrackingLinkUncheckedUpdateInput = {};
+    const nullable = [
+      'name', 'campaignId', 'botConnectionId', 'landingPostUrl', 'destinationUrl', 'postNumber',
+      'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm', 'creativeTag',
+    ] as const;
+    for (const key of nullable) {
+      const value = dto[key];
+      if (value === undefined) continue;
+      (changes as Record<string, unknown>)[key] =
+        typeof value === 'string' ? value.trim() || null : value;
+    }
+    if (dto.destinationMode !== undefined) changes.destinationMode = dto.destinationMode;
+    if (dto.autoRedirect !== undefined) changes.autoRedirect = dto.autoRedirect;
+    if (dto.redirectDelayMs !== undefined) changes.redirectDelayMs = dto.redirectDelayMs;
+
+    const merged = { ...existing, ...changes } as typeof existing;
+    await this.validateLinkInput(
+      workspaceId,
+      {
+        channelId: existing.channelId,
+        campaignId: merged.campaignId ?? undefined,
+        botConnectionId: merged.botConnectionId ?? undefined,
+        destinationMode: merged.destinationMode,
+        landingPostUrl: merged.landingPostUrl ?? undefined,
+        destinationUrl: merged.destinationUrl ?? undefined,
+        postNumber: merged.postNumber ?? undefined,
+      },
+      existing.linkMode as LinkMode,
+    );
+
+    const link = await this.prisma.trackingLink.update({
+      where: { id },
+      data: changes,
+      include: {
+        channel: { select: { id: true, title: true } },
+        campaign: { select: { id: true, name: true, adPlatform: true } },
+        _count: { select: { clickEvents: true } },
       },
     });
 
@@ -252,6 +432,10 @@ export class TrackingService {
         browser: ua?.browser,
         device: ua?.device,
         os: ua?.os,
+        // S2-10/S2-11: перехід у Telegram підтверджує лише натискання кнопки на
+        // сторінці. При автоматичному редиректі (миттєвому чи із затримкою) це
+        // не вимірюється — такий клік не входить у частку «дійшли».
+        reachTracked: !link.autoRedirect,
         consentSnapshot: consent as object,
       },
     });
@@ -272,19 +456,16 @@ export class TrackingService {
     const pageContext = this.buildPageContext(link, telegramUrl ?? 'https://t.me', clickEvent.id, apiOrigin);
 
     /**
-     * Подія «Відкрив Telegram» (telegramOpenedAt) з ТЗ нормально фіксується
-     * JS-маячком (sendBeacon) зі сторінки-заглушки. Але коли autoRedirect
-     * увімкнено з нульовою затримкою — це дефолт для нових посилань —
-     * контролер взагалі не рендерить HTML, а одразу шле 302 (щоб перехід був
-     * миттєвим, без "мигання" сторінки). Без сторінки маячку нема звідки
-     * спрацювати, і telegramOpenedAt лишався б порожнім назавжди. Оскільки
-     * в цьому режимі сервер сам гарантовано відправляє браузер на
-     * telegramUrl, фіксуємо відкриття тут же, синхронно з кліком.
+     * Раніше при миттєвому редиректі сервер сам ставив telegramOpenedAt — і
+     * частка «дійшли до Telegram» для таких посилань завжди була ~100%, тобто
+     * нічого не показувала. Тепер такий клік просто позначено reachTracked=false
+     * (див. вище), а факт відкриття ставить лише маячок з кнопки на сторінці.
      */
-    if (telegramUrl !== null && link.autoRedirect && link.redirectDelayMs === 0) {
+    if (telegramUrl === null && link.autoRedirect) {
+      // Канал недоступний — людина точно не дійшла, і це відомо напевно.
       await this.prisma.clickEvent.update({
         where: { id: clickEvent.id },
-        data: { telegramOpenedAt: new Date() },
+        data: { reachTracked: true },
       });
     }
 
@@ -385,7 +566,12 @@ export class TrackingService {
       channelId: string;
       campaignId: string | null;
       id: string;
-      channel: { username: string | null; telegramChatId: string; botIsAdmin: boolean };
+      channel: {
+        username: string | null;
+        telegramChatId: string;
+        botIsAdmin: boolean;
+        joinRequestsEnabled: boolean;
+      };
       botConnection: { botUsername: string } | null;
     },
     clickId: string,
@@ -401,6 +587,7 @@ export class TrackingService {
         campaignId: link.campaignId,
         trackingLinkId: link.id,
         telegramChatId: link.channel.telegramChatId,
+        createsJoinRequest: link.channel.joinRequestsEnabled,
       });
       if (invite) return invite.telegramInviteLink;
     }

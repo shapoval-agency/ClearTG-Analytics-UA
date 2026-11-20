@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { api, AuthError } from '@/lib/api';
+import { api, AuthError, type ClientBotConnection } from '@/lib/api';
 import { PageHeader, Card, ErrorState, DisconnectedState } from '@/components/v2/ui';
-import { LinkList } from '@/components/v2/links/LinkList';
+import { LinksWorkspace } from '@/components/v2/links/LinksWorkspace';
+import { LinkFilters } from '@/components/v2/links/LinkFilters';
 import {
   LinkBuilder,
   type BuilderChannel,
@@ -11,6 +12,8 @@ import {
   normalizeTrackingLink,
   normalizeInviteLink,
   mergeLinkRows,
+  filterLinkRows,
+  type LinkStatusFilter,
   type TrackingLinkApi,
   type InviteLinkApi,
 } from '@/components/v2/links/link-kind';
@@ -25,22 +28,32 @@ export const dynamic = 'force-dynamic';
  * а бекенд сам виводить режим із платформи кампанії (link-mode.ts) і
  * відхилить неприпустиму комбінацію.
  */
-export default async function V2LinksPage() {
+export default async function V2LinksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ channelId?: string; status?: string }>;
+}) {
+  const { channelId, status: statusParam } = await searchParams;
+  const status: LinkStatusFilter =
+    statusParam === 'active' || statusParam === 'archived' ? statusParam : 'all';
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3002').replace(/\/$/, '');
 
   let trackingLinks: TrackingLinkApi[] = [];
   let inviteLinks: InviteLinkApi[] = [];
   let channels: BuilderChannel[] = [];
   let campaigns: BuilderCampaign[] = [];
+  let bots: ClientBotConnection[] = [];
   let failed = false;
   let sessionExpired = false;
 
   try {
-    [trackingLinks, inviteLinks, channels, campaigns] = await Promise.all([
+    [trackingLinks, inviteLinks, channels, campaigns, bots] = await Promise.all([
       api<TrackingLinkApi[]>('/api/tracking-links'),
       api<InviteLinkApi[]>('/api/invite-links'),
       api<BuilderChannel[]>('/api/channels'),
       api<BuilderCampaign[]>('/api/campaigns'),
+      // S2-02/S2-03: без ботів конструктор просто не пропонує «Ваш бот».
+      api<ClientBotConnection[]>('/api/client-bots').catch(() => []),
     ]);
   } catch (err) {
     if (err instanceof AuthError) sessionExpired = true;
@@ -117,23 +130,25 @@ export default async function V2LinksPage() {
             відповідь, яка реклама справді працює.
           </p>
         </Card>
-        <LinkBuilder channels={channels} campaigns={campaigns} appUrl={appUrl} />
+        <LinkBuilder channels={channels} campaigns={campaigns} bots={bots} appUrl={appUrl} />
       </>
     );
   }
 
+  const visibleRows = filterLinkRows(rows, { channelId, status });
+
   return (
     <>
       {header}
-      <LinkList rows={rows} />
-      <details className="rounded-[18px] border border-[#dbe4f0] bg-white p-4 shadow-[0_10px_34px_rgba(20,52,110,0.055)] sm:p-5">
-        <summary className="cursor-pointer text-sm font-bold text-[#102044] hover:text-brand-700">
-          + Створити посилання
-        </summary>
-        <div className="mt-4">
-          <LinkBuilder channels={channels} campaigns={campaigns} appUrl={appUrl} />
-        </div>
-      </details>
+      <LinkFilters channels={channels} channelId={channelId} status={status} />
+      <LinksWorkspace
+        rows={visibleRows}
+        totalRows={rows.length}
+        channels={channels}
+        campaigns={campaigns}
+        bots={bots}
+        appUrl={appUrl}
+      />
     </>
   );
 }

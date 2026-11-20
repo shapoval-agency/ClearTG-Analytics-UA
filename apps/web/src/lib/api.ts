@@ -46,6 +46,8 @@ export class AuthError extends Error {
 
 export interface DashboardOverview {
   clicks: number;
+  /** S2-10: кліки, де перехід у Telegram вимірювався. Нема в старому API. */
+  reachTracked?: number;
   reached: number;
   reachRate: number;
   subscribers: number;
@@ -122,6 +124,7 @@ export interface CampaignReportRow {
   adPlatform: string;
   channelTitle: string;
   clicks: number;
+  reachTracked?: number;
   reached: number;
   reachRate: number;
   uniqueClickers: number;
@@ -136,8 +139,11 @@ export interface TrackingLinkReportRow {
   slug: string;
   name: string | null;
   campaignName: string | null;
+  /** Платформа кампанії — рівень «Джерело» в S2-19. Нема в старому API. */
+  adPlatform?: string | null;
   channelTitle: string;
   clicks: number;
+  reachTracked?: number;
   reached: number;
   reachRate: number;
   uniqueClickers: number;
@@ -153,6 +159,39 @@ export interface TrackingLinkReportRow {
   creativeTag: string | null;
   postNumber: number | null;
   landingPostUrl: string | null;
+}
+
+/** GET /api/dashboard/bot-links — S2-04, клік vs старт бота. */
+export interface BotLinkReportRow {
+  id: string;
+  name: string | null;
+  campaignName: string | null;
+  botUsername: string | null;
+  isActive: boolean;
+  clicks: number;
+  starts: number;
+  blocked: number;
+  startRate: number;
+}
+
+/** GET /api/client-bots — S2-02, власний бот клієнта. */
+export interface ClientBotConnection {
+  id: string;
+  botUsername: string;
+  isActive: boolean;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  connectedAt: string;
+}
+
+/**
+ * Частка «дійшли до Telegram» лише серед виміряних кліків (S2-10).
+ * null — нічого не вимірювалось (усі кліки з миттєвим переходом).
+ * Старе API без reachTracked рахувало від усіх кліків — повертаємо як було.
+ */
+export function measuredReach(row: { clicks: number; reached: number; reachTracked?: number }) {
+  const tracked = row.reachTracked ?? row.clicks;
+  return tracked > 0 ? { tracked, rate: row.reached / tracked } : null;
 }
 
 export interface UnsubscribeTimingBucket {
@@ -210,6 +249,7 @@ export interface SubscriberDossier {
     reason: string;
     campaign: string | null;
     trackingLink: string | null;
+    trackingLinkName?: string | null;
     utm: {
       source: string | null;
       medium: string | null;
@@ -221,6 +261,7 @@ export interface SubscriberDossier {
     postNumber: number | null;
     clickedAt: string | null;
     telegramOpenedAt: string | null;
+    reachTracked?: boolean | null;
   } | null;
   unsubscribes: Array<{
     id: string;

@@ -35,8 +35,8 @@ export class CampaignController {
 
   @RequiresWorkspace()
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.campaign.getById(id);
+  get(@Param('id') id: string, @WorkspaceId() workspaceId: string) {
+    return this.campaign.getById(id, workspaceId);
   }
 
   @RequiresWorkspace()
