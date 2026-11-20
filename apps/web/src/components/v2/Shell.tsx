@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
 import {
+  ArrowSquareOut,
   ChartBar,
   LinkSimple,
   SignOut,
@@ -11,7 +12,7 @@ import {
   TelegramLogo,
   UsersThree,
 } from '@phosphor-icons/react';
-import { logoutAction } from '@/lib/actions';
+import { logoutAction } from '@/lib/account-actions';
 import { WorkspacePicker } from '@/components/v2/WorkspacePicker';
 import type { AuthMe } from '@/lib/api';
 
@@ -22,6 +23,12 @@ const NAV = [
   { href: '/v2/reports', label: 'Звіти', icon: ChartBar },
   { href: '/v2/subscribers', label: 'Учасники', icon: UsersThree },
 ];
+
+/**
+ * Тимчасове посилання на старий кабінет (`app/(legacy)`).
+ * Видаляється разом зі старим кабінетом — див. `docs/new-dashboard/LEGACY_REMOVAL.md`.
+ */
+const LEGACY_DASHBOARD_HREF = '/dashboard';
 
 function isActive(pathname: string, href: string) {
   if (href === '/v2') return pathname === '/v2';
@@ -76,6 +83,15 @@ export function V2Shell({
           </nav>
 
           <div className="ml-auto flex min-w-0 items-center gap-3">
+            <Link
+              href={LEGACY_DASHBOARD_HREF}
+              title="Старий кабінет"
+              aria-label="Старий кабінет"
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-blue-100/80 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              <ArrowSquareOut size={16} aria-hidden="true" />
+              <span>Старий кабінет</span>
+            </Link>
             {me?.user.email && (
               <div className="hidden items-center gap-2 xl:flex">
                 <span className="grid size-9 place-items-center rounded-full bg-white/15 text-sm font-bold ring-1 ring-white/20">

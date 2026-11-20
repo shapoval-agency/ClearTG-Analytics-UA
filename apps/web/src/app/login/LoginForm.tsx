@@ -98,7 +98,7 @@ export default function LoginForm({
       }
 
       const next = searchParams.get('next');
-      const redirectTo = data.redirect ?? (next && next.startsWith('/') ? next : '/dashboard');
+      const redirectTo = data.redirect ?? (next && next.startsWith('/') ? next : '/v2');
 
       if (localMode && data.email) {
         const { ensureState } = await import('@/lib/local-store');

@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
   };
 
   const destination =
-    data.workspaces.length === 0 ? '/onboarding' : '/dashboard';
+    data.workspaces.length === 0 ? '/onboarding' : '/v2';
 
   const response = NextResponse.redirect(new URL(destination, request.url));
   response.cookies.set(TOKEN_COOKIE, data.accessToken, SESSION_COOKIE_OPTIONS);
