@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { createWorkspaceAction } from '@/lib/actions';
+import { createWorkspaceAction } from '@/lib/account-actions';
 
 export default function OnboardingPage() {
   const [name, setName] = useState('');

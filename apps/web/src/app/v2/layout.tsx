@@ -16,9 +16,8 @@ export const metadata: Metadata = {
  * `lib/api.ts` сам додає `Authorization` та `x-workspace-id` із cookie.
  * Тут ми лише отримуємо профіль для шапки.
  *
- * Кореневий `app/layout.tsx` обгортає все у `AppShell`, тому `/v2` додано
- * в його список `NO_SHELL` — інакше поверх нового кабінету малювалося б
- * старе меню з 19 пунктів.
+ * Старе меню (`AppShell`) живе лише в `app/(legacy)/layout.tsx` і сюди
+ * не потрапляє — кореневий layout нічого не обгортає.
  */
 export default async function V2Layout({
   children,

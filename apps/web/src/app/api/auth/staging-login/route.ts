@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       ? data.isAgencyAdmin
         ? '/agency/clients'
         : '/onboarding'
-      : '/dashboard';
+      : '/v2';
 
   const response = NextResponse.json({ ok: true, redirect: destination });
   response.cookies.set(TOKEN_COOKIE, data.accessToken, SESSION_COOKIE_OPTIONS);
