@@ -63,9 +63,11 @@ export class ClientBotConnectionService {
     // Не DELETE: BotStartEvent має onDelete: Cascade, а посилання — SetNull.
     // Видалення стерло б історію стартів і відв'язало б посилання від бота.
     await this.runtime.stopBot(id);
+    // lastError очищаємо: інакше стара помилка 409 змусила б автовідновлення
+    // при наступному старті сервера увімкнути бота, якого клієнт вимкнув сам.
     await this.prisma.telegramBotConnection.update({
       where: { id },
-      data: { isActive: false },
+      data: { isActive: false, lastError: null, lastErrorAt: null },
     });
     return { ok: true };
   }

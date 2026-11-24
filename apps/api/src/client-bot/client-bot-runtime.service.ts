@@ -1,11 +1,18 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Bot, Context } from 'grammy';
+import { Bot, Context, GrammyError } from 'grammy';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { LoggerService } from '../common/logger.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { BotAdminService } from '../telegram/bot-admin.service';
-import { parseClickStartPayload, didUserBlockBot, didUserUnblockBot } from '@cleartg/shared';
+import {
+  parseClickStartPayload,
+  didUserBlockBot,
+  didUserUnblockBot,
+  classifyBotStartError,
+  isRecoverableBotError,
+  BOT_START_RETRY_DELAYS_SEC,
+} from '@cleartg/shared';
 import { BotStartEventStatus } from '@cleartg/database';
 
 /**
@@ -16,6 +23,8 @@ import { BotStartEventStatus } from '@cleartg/database';
 @Injectable()
 export class ClientBotRuntimeService implements OnModuleInit, OnModuleDestroy {
   private bots = new Map<string, Bot>();
+  /** Заплановані повторні спроби старту — скасовуються при зупинці. */
+  private retries = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
     private prisma: PrismaService,
@@ -31,9 +40,12 @@ export class ClientBotRuntimeService implements OnModuleInit, OnModuleDestroy {
     // тимчасово недоступна — ця фіча просто не піднімається, а НЕ валить весь
     // застосунок при старті. Саме так впав прод: findMany() був поза catch.
     try {
-      const connections = await this.prisma.telegramBotConnection.findMany({
-        where: { isActive: true },
+      // Крім активних, піднімаємо й ботів, яких раніше вимкнула тимчасова помилка
+      // 409 (перекриття процесів під час деплою), — вони не потребують дій клієнта.
+      const candidates = await this.prisma.telegramBotConnection.findMany({
+        where: { OR: [{ isActive: true }, { isActive: false, lastError: { contains: '409' } }] },
       });
+      const connections = candidates.filter((c) => c.isActive || isRecoverableBotError(c.lastError));
       for (const connection of connections) {
         try {
           const token = this.crypto.decrypt(connection.tokenEnc);
@@ -56,6 +68,8 @@ export class ClientBotRuntimeService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    for (const timer of this.retries.values()) clearTimeout(timer);
+    this.retries.clear();
     for (const bot of this.bots.values()) {
       try {
         await bot.stop();
@@ -65,8 +79,9 @@ export class ClientBotRuntimeService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async startBot(connectionId: string, token: string) {
+  async startBot(connectionId: string, token: string, attempt = 0) {
     if (this.bots.has(connectionId)) return;
+    this.clearRetry(connectionId);
 
     const bot = new Bot(token);
 
@@ -94,21 +109,70 @@ export class ClientBotRuntimeService implements OnModuleInit, OnModuleDestroy {
         allowed_updates: ['message', 'my_chat_member'],
         onStart: () => {
           this.logger.log(`Клієнтський бот ${connectionId} запущено`, 'ClientBot');
+          // Відновлення після тимчасової помилки — знімаємо позначку «відключено».
+          void this.prisma.telegramBotConnection
+            .updateMany({
+              where: { id: connectionId, OR: [{ isActive: false }, { lastError: { not: null } }] },
+              data: { isActive: true, lastError: null, lastErrorAt: null },
+            })
+            .catch(() => null);
         },
       })
-      .catch(async (err) => {
-        this.bots.delete(connectionId);
-        const message = err instanceof Error ? err.message : String(err);
-        this.logger.error(`Клієнтський бот ${connectionId} не зміг стартувати: ${message}`, 'ClientBot');
-        const updated = await this.prisma.telegramBotConnection.update({
-          where: { id: connectionId },
-          data: { isActive: false, lastError: message, lastErrorAt: new Date() },
-        });
-        await this.notifyDisconnected(updated.workspaceId, updated.botUsername);
+      .catch((err) => this.handleStartFailure(connectionId, token, attempt, err));
+  }
+
+  /**
+   * Раніше будь-яка помилка старту назавжди вимикала бота в спільній БД. Під час
+   * деплою старий процес ще опитує Telegram, новий отримує 409 — і бот лишався
+   * «відключеним» після кожного деплою. Тепер вимикаємо лише тоді, коли без
+   * клієнта не обійтися (відкликаний токен, чужий webhook), решту повторюємо.
+   */
+  private async handleStartFailure(connectionId: string, token: string, attempt: number, err: unknown) {
+    this.bots.delete(connectionId);
+    const message = err instanceof Error ? err.message : String(err);
+    const failure = classifyBotStartError(
+      err instanceof GrammyError ? { code: err.error_code, description: err.description } : {},
+    );
+    const delay = BOT_START_RETRY_DELAYS_SEC[attempt];
+
+    if (failure === 'retry' && delay !== undefined) {
+      this.logger.warn(
+        `Клієнтський бот ${connectionId} не стартував (${message}). Повтор через ${delay} с (спроба ${attempt + 1}/${BOT_START_RETRY_DELAYS_SEC.length}).`,
+        'ClientBot',
+      );
+      this.retries.set(
+        connectionId,
+        setTimeout(() => {
+          this.retries.delete(connectionId);
+          void this.startBot(connectionId, token, attempt + 1);
+        }, delay * 1000),
+      );
+      return;
+    }
+
+    this.logger.error(`Клієнтський бот ${connectionId} не зміг стартувати: ${message}`, 'ClientBot');
+    try {
+      const updated = await this.prisma.telegramBotConnection.update({
+        where: { id: connectionId },
+        data: { isActive: false, lastError: message, lastErrorAt: new Date() },
       });
+      await this.notifyDisconnected(updated.workspaceId, updated.botUsername);
+    } catch (dbErr) {
+      this.logger.error(
+        `Не вдалося позначити клієнтського бота ${connectionId} відключеним: ${dbErr instanceof Error ? dbErr.message : dbErr}`,
+        'ClientBot',
+      );
+    }
+  }
+
+  private clearRetry(connectionId: string) {
+    const timer = this.retries.get(connectionId);
+    if (timer) clearTimeout(timer);
+    this.retries.delete(connectionId);
   }
 
   async stopBot(connectionId: string) {
+    this.clearRetry(connectionId);
     const bot = this.bots.get(connectionId);
     if (!bot) return;
     try {
