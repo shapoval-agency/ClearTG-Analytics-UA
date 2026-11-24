@@ -6,6 +6,21 @@ import { Badge, Card } from '@/components/v2/ui';
 import { formatDateUk } from '@/lib/labels';
 import type { ClientBotConnection } from '@/lib/api';
 
+/** Пояснення причини відключення людськими словами (код помилки Telegram — у логах). */
+function botErrorHint(lastError: string): string {
+  const e = lastError.toLowerCase();
+  if (e.includes('401') || e.includes('404') || e.includes('unauthorized')) {
+    return 'Telegram більше не приймає токен — його відкликали або бота видалено в @BotFather. Згенеруйте новий токен.';
+  }
+  if (e.includes('webhook')) {
+    return 'У бота налаштований інший webhook (інший сервіс уже приймає його повідомлення). Вимкніть той webhook або підключіть окремого бота.';
+  }
+  if (e.includes('409')) {
+    return 'Того самого бота одночасно запускав інший сервер. Зазвичай це минає саме — ми повторюємо спроби автоматично.';
+  }
+  return 'Бот перестав відповідати.';
+}
+
 /**
  * S2-02: власний бот клієнта. Для воронок, де продаж чи заявка відбуваються
  * в боті, а не в каналі. Після підключення посилання можна вести прямо в бота
@@ -52,7 +67,7 @@ export function ClientBotPanel({ bots }: { bots: ClientBotConnection[] }) {
                 </div>
                 {!bot.isActive && bot.lastError && (
                   <p className="mt-2 text-sm text-amber-700">
-                    Telegram перестав приймати токен цього бота. Згенеруйте новий у @BotFather і підключіть знову —
+                    {botErrorHint(bot.lastError)} Щоб перепідключити, вставте токен цього бота у форму нижче —
                     історія переходів збережеться.
                   </p>
                 )}
