@@ -8,6 +8,11 @@ export interface LandingPageContext {
   linkMode: 'LANDING_PAGE' | 'SHORTLINK';
   clickId?: string;
   apiOrigin?: string;
+  /**
+   * S3-13: публічні ID рекламних тегів клієнта. Заповнюються лише для
+   * увімкнених інтеграцій і лише якщо людина дала згоду для цієї платформи.
+   */
+  adTags?: { metaPixelId?: string; ga4MeasurementId?: string };
 }
 
 function baseStyles() {
@@ -78,15 +83,56 @@ function baseStyles() {
   `;
 }
 
-function openTelegramScript(ctx: LandingPageContext): string {
+const META_PIXEL_ID = /^\d{10,20}$/;
+const GA4_MEASUREMENT_ID = /^G-[A-Z0-9]{4,}$/;
+
+/**
+ * S3-13: рекламні теги клієнта на сторінці переходу. Вони ставлять cookies
+ * _fbp / _ga, за якими Meta і GA4 точно зіставляють підписку з візитом.
+ * ID перевіряються регулярками — у HTML не потрапляє нічого, крім цифр і G-коду.
+ */
+function adTagsHead(ctx: LandingPageContext): string {
+  const parts: string[] = [];
+  const pixel = ctx.adTags?.metaPixelId;
+  if (pixel && META_PIXEL_ID.test(pixel)) {
+    parts.push(`<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixel}');fbq('track','PageView');</script>`);
+  }
+  const ga = ctx.adTags?.ga4MeasurementId;
+  if (ga && GA4_MEASUREMENT_ID.test(ga)) {
+    parts.push(`<script async src="https://www.googletagmanager.com/gtag/js?id=${ga}"></script><script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${ga}');</script>`);
+  }
+  return parts.join('\n  ');
+}
+
+/**
+ * Спільний скрипт сторінок: маячок «відкрив Telegram» (S2-10) і передача
+ * рекламних cookies кліку (S3-13). Обидва — sendBeacon, не затримують перехід.
+ */
+function openTelegramScript(ctx: LandingPageContext, autoGo?: { url: string; delayMs: number }): string {
   if (!ctx.clickId || !ctx.apiOrigin) return '';
   const api = escapeHtml(ctx.apiOrigin.replace(/\/$/, ''));
   const clickId = escapeHtml(ctx.clickId);
+  const go = autoGo
+    ? `setTimeout(function(){ identity(); location.replace(${JSON.stringify(autoGo.url).replace(/</g, '\\u003c')}); }, ${Math.max(0, Math.round(autoGo.delayMs))});`
+    : '';
   return `<script>
 (function(){
   var api='${api}', clickId='${clickId}';
   function ping(){ try { navigator.sendBeacon(api+'/api/tracking/open/'+clickId); } catch(e) {} }
-  document.querySelectorAll('a.cta').forEach(function(a){ a.addEventListener('click', ping); });
+  function cookie(n){ var m=document.cookie.match('(?:^|; )'+n+'=([^;]*)'); return m?decodeURIComponent(m[1]):null; }
+  function identity(){
+    try {
+      var d={}, fbp=cookie('_fbp'), ga=cookie('_ga');
+      if (fbp) d.fbp=fbp;
+      if (ga) { var p=ga.split('.'); if (p.length>=4) d.gaClientId=p[2]+'.'+p[3]; }
+      var gs=document.cookie.match(/(?:^|; )_ga_[A-Z0-9]+=([^;]*)/);
+      if (gs) { var s=decodeURIComponent(gs[1]).match(/[.$]s?(\\d{9,11})/); if (s) d.gaSessionId=s[1]; }
+      if (!d.fbp && !d.gaClientId) return;
+      navigator.sendBeacon(api+'/api/tracking/identity/'+clickId, new Blob([JSON.stringify(d)], {type:'application/json'}));
+    } catch(e) {}
+  }
+  document.querySelectorAll('a.cta').forEach(function(a){ a.addEventListener('click', function(){ identity(); ping(); }); });
+  ${go}
 })();
 </script>`;
 }
@@ -137,6 +183,9 @@ export function renderRedirectPage(ctx: LandingPageContext, delaySeconds: number
   const telegramUrl = escapeHtml(ctx.telegramUrl);
   const privacyUrl = escapeHtml(ctx.privacyPolicyUrl);
   const delay = Math.max(0, Math.min(delaySeconds, 10));
+  // S3-14: meta refresh — запасний перехід, якщо скрипти не завантажились або
+  // впали. Основний перехід робить JS (після збору cookies, S3-13).
+  const fallbackDelay = delay + 2;
 
   return `<!DOCTYPE html>
 <html lang="uk">
@@ -145,7 +194,8 @@ export function renderRedirectPage(ctx: LandingPageContext, delaySeconds: number
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${channel} — Telegram</title>
   <meta name="robots" content="index,follow">
-  ${delay > 0 ? `<meta http-equiv="refresh" content="${delay};url=${telegramUrl}">` : ''}
+  <meta http-equiv="refresh" content="${fallbackDelay};url=${telegramUrl}">
+  ${adTagsHead(ctx)}
   <style>${baseStyles()}
     body { display: flex; align-items: center; justify-content: center; }
     .wrap { text-align: center; }
@@ -162,7 +212,7 @@ export function renderRedirectPage(ctx: LandingPageContext, delaySeconds: number
     <a class="cta" href="${telegramUrl}" rel="noopener noreferrer">Перейти до Telegram</a>
     <div class="footer"><a href="${privacyUrl}">Політика конфіденційності</a></div>
   </div>
-  ${openTelegramScript(ctx)}
+  ${openTelegramScript(ctx, { url: ctx.telegramUrl, delayMs: delay * 1000 })}
 </body>
 </html>`;
 }
@@ -187,6 +237,7 @@ export function renderLandingPage(ctx: LandingPageContext): string {
   <meta name="description" content="${description}">
   <meta name="robots" content="index,follow">
   <style>${baseStyles()}</style>
+  ${adTagsHead(ctx)}
 </head>
 <body>
   <div class="wrap">
@@ -242,6 +293,7 @@ export function renderShortlinkPage(ctx: LandingPageContext): string {
   <title>${channel} — Telegram</title>
   <meta name="robots" content="index,follow">
   <style>${baseStyles()}</style>
+  ${adTagsHead(ctx)}
 </head>
 <body>
   <div class="wrap">

@@ -62,7 +62,7 @@ grep -rnE "legacy" apps/web/src --include='*.ts' --include='*.tsx' \
 
 - **Агентская панель** `/agency/clients` живёт только в старом кабинете. `app/api/auth/staging-login/route.ts` отправляет агентского админа без workspace на `/agency/clients`. Перед удалением нужно решить, где агентская панель будет в `/v2`, или сменить редирект.
 - **LOCAL_MODE** (DEC-006: не переносится). `app/api/local-login/route.ts` ведёт на `/dashboard`. После удаления LOCAL_MODE останется только на странице входа. Можно удалить целиком: `lib/local-mode.ts`, `lib/local-store.ts`, `components/LocalInit.tsx`, `app/api/local-login/` и ветку `localMode` в `login/`.
-- **Google Ads OAuth**: `apps/api/src/integrations/google-ads/google-ads.controller.ts` после авторизации возвращает на `/integrations/google-ads` (страница старого кабинета). Рекламные интеграции — этап 03, в `/v2` их ещё нет: перенести вместе с этим экраном.
+- **Рекламные интеграции** перенесены в `/v2/ads` (этап 03); OAuth Google Ads возвращает туда же. Старые страницы `/integrations/*` больше не нужны новому кабинету.
 - **Ссылки Telegram-бота** уже ведут в `/v2` (кнопка «Кабінет», досье, список каналов).
 - **Middleware**: ветка `/agency` в `apps/web/src/middleware.ts` станет лишней, но ничего не ломает.
 - **Чистые адреса**: после удаления `/v2/channels` и остальные разделы можно перенести на `/channels` и т. д. Это отдельная задача: нужны редиректы со старых `/v2/*`.

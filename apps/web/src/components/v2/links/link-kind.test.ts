@@ -4,6 +4,8 @@ import {
   isTelegramPersonalUrl,
   normalizePersonalUrl,
   normalizeTrackingLink,
+  openModeOf,
+  openModeSettings,
   parseBulkLines,
   type TrackingLinkApi,
 } from './link-kind';
@@ -25,9 +27,18 @@ describe('link-kind', () => {
     const row = normalizeTrackingLink(api({ autoRedirect: false }), 'https://app');
     expect(row.editable).toMatchObject({
       channelId: 'c1', campaignId: 'k1', source: 'META', destination: 'channel',
-      measureReach: true, creativeTag: 'v1',
+      openMode: 'button', creativeTag: 'v1',
     });
     expect(row.marks).toContain('перехід у Telegram вимірюється');
+  });
+
+  it('S3-13: розпізнає швидку сторінку й переводить режим у налаштування', () => {
+    const row = normalizeTrackingLink(api({ autoRedirect: true, redirectDelayMs: 1000 }), 'x');
+    expect(row.editable?.openMode).toBe('fast');
+    expect(row.marks).toContain('швидка сторінка переходу');
+    expect(openModeSettings('fast')).toEqual({ autoRedirect: true, redirectDelayMs: 1000 });
+    expect(openModeSettings('button')).toEqual({ autoRedirect: false, redirectDelayMs: 0 });
+    expect(openModeOf({ autoRedirect: true, redirectDelayMs: 0 })).toBe('instant');
   });
 
   it('S2-03/S2-05: розпізнає посилання в бота та в особистий акаунт', () => {

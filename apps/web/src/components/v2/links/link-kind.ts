@@ -133,6 +133,7 @@ export interface TrackingLinkApi {
   destinationUrl?: string | null;
   botConnectionId?: string | null;
   autoRedirect?: boolean;
+  redirectDelayMs?: number;
   channel: { id: string; title: string };
   campaign: { id: string; name: string; adPlatform: string } | null;
   _count: { clickEvents: number };
@@ -155,6 +156,41 @@ export const DESTINATION_MODE: Record<LinkDestinationKind, 'INVITE_LINK' | 'PUBL
   personal: 'PERSONAL_CHAT',
 };
 
+/** Як відкривати Telegram після кліку: S2-11 (з кнопкою) і S3-13 (швидка сторінка). */
+export type OpenMode = 'instant' | 'fast' | 'button';
+
+/** Затримка швидкої сторінки: досить, щоб теги поставили cookies, і не дратує людину. */
+export const FAST_PAGE_DELAY_MS = 1000;
+
+export const OPEN_MODES: Array<{ value: OpenMode; label: string; description: string }> = [
+  {
+    value: 'instant',
+    label: 'Миттєво',
+    description: 'Найшвидше. Але «Дійшли до Telegram» не вимірюється, а реклама отримує менше даних для зіставлення.',
+  },
+  {
+    value: 'fast',
+    label: 'Через швидку сторінку (~1 с)',
+    description: 'Коротка сторінка з вашим пікселем Meta і тегом GA4 (якщо підключені й людина дала згоду) — точніше зіставлення в рекламі. Якщо щось не завантажилось, людина все одно потрапить у Telegram.',
+  },
+  {
+    value: 'button',
+    label: 'Сторінка з кнопкою «Відкрити Telegram»',
+    description: 'Людина натискає кнопку сама — так ми чесно рахуємо, скільки кліків справді дійшли до Telegram.',
+  },
+];
+
+export function openModeOf(link: { autoRedirect?: boolean; redirectDelayMs?: number }): OpenMode {
+  if (link.autoRedirect === false) return 'button';
+  return (link.redirectDelayMs ?? 0) > 0 ? 'fast' : 'instant';
+}
+
+export function openModeSettings(mode: OpenMode): { autoRedirect: boolean; redirectDelayMs: number } {
+  if (mode === 'button') return { autoRedirect: false, redirectDelayMs: 0 };
+  if (mode === 'fast') return { autoRedirect: true, redirectDelayMs: FAST_PAGE_DELAY_MS };
+  return { autoRedirect: true, redirectDelayMs: 0 };
+}
+
 /** Значення полів посилання, які можна змінити без втрати історії (S2-07). */
 export interface EditableLink {
   channelId: string;
@@ -165,7 +201,7 @@ export interface EditableLink {
   postUrl: string;
   personalUrl: string;
   botConnectionId: string;
-  measureReach: boolean;
+  openMode: OpenMode;
   utmSource: string;
   utmMedium: string;
   utmCampaign: string;
@@ -225,7 +261,9 @@ export function normalizeTrackingLink(
   if (destination === 'personal' && link.destinationUrl) {
     marks.push(`особистий акаунт: ${link.destinationUrl.replace('https://t.me/', '@')}`);
   }
-  if (link.autoRedirect === false) marks.push('перехід у Telegram вимірюється');
+  const openMode = openModeOf(link);
+  if (openMode === 'button') marks.push('перехід у Telegram вимірюється');
+  if (openMode === 'fast') marks.push('швидка сторінка переходу');
 
   const embedScript = `<script src="${appUrl}/cleartg.js" data-slug="${link.slug}" data-app-url="${appUrl}" data-path="${link.publicPath}" defer></script>`;
 
@@ -254,7 +292,7 @@ export function normalizeTrackingLink(
       postUrl: link.landingPostUrl ?? '',
       personalUrl: destination === 'personal' ? link.destinationUrl ?? '' : '',
       botConnectionId: link.botConnectionId ?? '',
-      measureReach: link.autoRedirect === false,
+      openMode: openModeOf(link),
       utmSource: link.utmSource ?? '',
       utmMedium: link.utmMedium ?? '',
       utmCampaign: link.utmCampaign ?? '',

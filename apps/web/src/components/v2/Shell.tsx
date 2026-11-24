@@ -7,6 +7,7 @@ import {
   ArrowSquareOut,
   ChartBar,
   LinkSimple,
+  Megaphone,
   SignOut,
   SquaresFour,
   TelegramLogo,
@@ -22,6 +23,7 @@ const NAV = [
   { href: '/v2/links', label: 'Посилання', icon: LinkSimple },
   { href: '/v2/reports', label: 'Звіти', icon: ChartBar },
   { href: '/v2/subscribers', label: 'Учасники', icon: UsersThree },
+  { href: '/v2/ads', label: 'Реклама', icon: Megaphone },
 ];
 
 /**
@@ -55,7 +57,7 @@ export function V2Shell({
           </Link>
 
           {me && (
-            <div className="hidden min-w-0 lg:block lg:w-[230px]">
+            <div className="hidden min-w-0 lg:block lg:w-[190px] xl:w-[230px]">
               <WorkspacePicker me={me} activeWorkspaceId={activeWorkspaceId} onDark />
             </div>
           )}
@@ -70,13 +72,13 @@ export function V2Shell({
                   href={item.href}
                   aria-current={active ? 'page' : undefined}
                   className={clsx(
-                    'relative flex h-full items-center gap-2 px-4 text-sm font-semibold transition-colors',
+                    'relative flex h-full items-center gap-1.5 px-2.5 text-sm font-semibold transition-colors xl:gap-2 xl:px-4',
                     active ? 'text-white' : 'text-blue-100/80 hover:text-white',
                   )}
                 >
                   <Icon size={18} weight={active ? 'fill' : 'regular'} aria-hidden="true" />
                   {item.label}
-                  {active && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-[#63a3ff]" />}
+                  {active && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#63a3ff]" />}
                 </Link>
               );
             })}
@@ -90,7 +92,7 @@ export function V2Shell({
               className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-blue-100/80 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               <ArrowSquareOut size={16} aria-hidden="true" />
-              <span>Старий кабінет</span>
+              <span className="lg:hidden xl:inline">Старий кабінет</span>
             </Link>
             {me?.user.email && (
               <div className="hidden items-center gap-2 xl:flex">
@@ -119,7 +121,7 @@ export function V2Shell({
       </main>
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-slate-200/80 bg-white/95 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-10px_30px_rgba(15,35,75,0.10)] backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-slate-200/80 bg-white/95 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-10px_30px_rgba(15,35,75,0.10)] backdrop-blur lg:hidden"
         aria-label="Мобільна навігація"
       >
         {NAV.map((item) => {

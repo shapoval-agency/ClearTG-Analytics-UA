@@ -262,6 +262,8 @@ export interface TrackingLinkInput {
   botConnectionId?: string;
   /** S2-11: false — сторінка з кнопкою, перехід у Telegram вимірюється. */
   autoRedirect?: boolean;
+  /** S3-13: > 0 — швидка сторінка переходу з рекламними тегами. */
+  redirectDelayMs?: number;
 }
 
 const LINK_STRING_KEYS = [
@@ -271,12 +273,13 @@ const LINK_STRING_KEYS = [
 
 /** Порожні рядки не відправляємо — інакше в БД осядуть порожні мітки. */
 function linkPayload(data: TrackingLinkInput) {
-  const payload: Record<string, string | boolean> = {};
+  const payload: Record<string, string | boolean | number> = {};
   for (const key of LINK_STRING_KEYS) {
     const value = data[key]?.trim();
     if (value) payload[key] = value;
   }
   if (data.autoRedirect !== undefined) payload.autoRedirect = data.autoRedirect;
+  if (data.redirectDelayMs !== undefined) payload.redirectDelayMs = data.redirectDelayMs;
   return payload;
 }
 
@@ -346,12 +349,13 @@ export async function updateTrackingLinkV2Action(
   id: string,
   data: Partial<Record<Exclude<(typeof LINK_STRING_KEYS)[number], 'channelId'>, string | null>> & {
     autoRedirect?: boolean;
+    redirectDelayMs?: number;
   },
 ) {
   const headers = await channelHeaders(true);
   if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.' };
 
-  const payload: Record<string, string | boolean | null> = {};
+  const payload: Record<string, string | boolean | number | null> = {};
   for (const [key, value] of Object.entries(data)) {
     if (value === undefined) continue;
     payload[key] = typeof value === 'string' ? value.trim() || null : value;
@@ -512,4 +516,97 @@ export async function revokeInviteLinkV2Action(id: string) {
 
   revalidatePath('/v2/links');
   return { error: null };
+}
+
+/* ─── Реклама (етап 03) ───────────────────────────────────────────── */
+
+export type AdPlatformKey = 'meta' | 'ga4' | 'google-ads';
+
+export interface IntegrationCheckResult {
+  ok: boolean;
+  checkedAt: string;
+  checks: Array<{ id: string; label: string; status: 'ok' | 'warning' | 'error'; detail: string }>;
+}
+
+async function adsRequest<T>(path: string, init: RequestInit & { json?: unknown }, fallback: string) {
+  const headers = await channelHeaders(init.json !== undefined);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', data: null as T | null };
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers,
+      body: init.json !== undefined ? JSON.stringify(init.json) : undefined,
+      cache: 'no-store',
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.', data: null as T | null };
+  }
+  if (!res.ok) return { error: await readError(res, fallback), data: null as T | null };
+  const data = (await res.json().catch(() => null)) as T | null;
+  revalidatePath('/v2/ads');
+  return { error: null, data };
+}
+
+/** Збереження даних підключення. Відправка після цього вимкнена до перевірки (S3-01, S3-05). */
+export async function saveAdIntegrationV2Action(platform: AdPlatformKey, data: Record<string, string>) {
+  const payload: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value.trim()) payload[key] = value.trim();
+  }
+  const res = await adsRequest(`/api/integrations/${platform}`, { method: 'POST', json: payload }, 'Не вдалося зберегти підключення');
+  return { error: res.error };
+}
+
+export async function verifyAdIntegrationV2Action(platform: AdPlatformKey) {
+  const res = await adsRequest<IntegrationCheckResult>(
+    `/api/integrations/${platform}/verify`, { method: 'POST' }, 'Не вдалося виконати перевірку',
+  );
+  return { error: res.error, check: res.data };
+}
+
+/** S3-03: увімкнути GA4, Ads або обидва. Вмикання — лише після успішної перевірки (бекенд). */
+export async function setAdIntegrationActiveV2Action(platform: AdPlatformKey, isActive: boolean) {
+  const res = await adsRequest(`/api/integrations/${platform}/active`, { method: 'POST', json: { isActive } },
+    isActive ? 'Не вдалося увімкнути відправку' : 'Не вдалося вимкнути відправку');
+  return { error: res.error };
+}
+
+export async function sendAdTestEventV2Action(platform: AdPlatformKey) {
+  const res = await adsRequest<{ success: boolean; error?: string; skipped?: boolean }>(
+    `/api/integrations/${platform}/test-event`, { method: 'POST' }, 'Не вдалося надіслати тестову подію',
+  );
+  if (res.error) return { error: res.error };
+  if (!res.data?.success) {
+    return {
+      error: res.data?.skipped
+        ? 'Тестова подія не пішла: спершу увімкніть відправку для цієї системи.'
+        : 'Рекламна система відхилила тестову подію. Перевірте дані підключення.',
+    };
+  }
+  return { error: null };
+}
+
+export async function googleAdsAuthUrlV2Action() {
+  const res = await adsRequest<{ url: string }>('/api/integrations/google-ads/auth-url', { method: 'GET' },
+    'Не вдалося почати вхід через Google');
+  return { error: res.error, url: res.data?.url ?? null };
+}
+
+export interface ConversionSettings {
+  conversionDelayHours: number;
+  skipQuickUnsubscribes: boolean;
+  sendReachEvent: boolean;
+  sendGiftEvent: boolean;
+  connected: string[];
+  last30Days: Record<string, number>;
+  byEvent: Array<{ eventName: string; status: string; count: number }>;
+  recentFailures: Array<{ platform: string; eventName: string; error: string | null; at: string }>;
+}
+
+export async function updateConversionSettingsV2Action(data: Partial<Pick<ConversionSettings,
+  'conversionDelayHours' | 'skipQuickUnsubscribes' | 'sendReachEvent' | 'sendGiftEvent'>>) {
+  const res = await adsRequest<ConversionSettings>('/api/conversion-settings', { method: 'PUT', json: data },
+    'Не вдалося зберегти налаштування');
+  return { error: res.error };
 }

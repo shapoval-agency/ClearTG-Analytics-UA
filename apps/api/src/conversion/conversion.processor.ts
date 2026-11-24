@@ -1,13 +1,16 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
-import { MetaService } from '../integrations/meta/meta.service';
+import { MetaService, type ConversionPayload, type DeliveryResult } from '../integrations/meta/meta.service';
 import { GA4Service } from '../integrations/ga4/ga4.service';
 import { GoogleAdsService } from '../integrations/google-ads/google-ads.service';
 import { TikTokService } from '../integrations/tiktok/tiktok.service';
 import { CONVERSION_QUEUE } from './conversion.service';
 import { ConversionEventStatus, ConversionPlatform } from '@cleartg/database';
-import { ConsentSnapshot } from '@cleartg/shared';
+import { CONVERSION_EVENTS, ConsentSnapshot, getPublicLinkPath, type LinkMode } from '@cleartg/shared';
+import { resolveFrontendUrl } from '../common/public-app-url';
+
+type Sender = (workspaceId: string, payload: ConversionPayload) => Promise<DeliveryResult>;
 
 @Processor(CONVERSION_QUEUE)
 export class ConversionDeliveryProcessor extends WorkerHost {
@@ -25,111 +28,81 @@ export class ConversionDeliveryProcessor extends WorkerHost {
     const event = await this.prisma.conversionEvent.findUnique({
       where: { id: job.data.conversionEventId },
       include: {
-        subscriberProfile: true,
-        attribution: { include: { clickEvent: true } },
+        workspace: { select: { skipQuickUnsubscribes: true } },
+        subscriberProfile: { include: { _count: { select: { unsubscribeEvents: true } } } },
       },
     });
-    if (!event) return;
+    if (!event || event.status !== ConversionEventStatus.PENDING) return;
 
-    if (event.eventName === 'TG_Subscribe' && event.subscriberProfileId && event.campaignId) {
-      const campaign = await this.prisma.campaign.findUnique({
-        where: { id: event.campaignId },
-        select: { conversionDelayMinutes: true },
+    // S3-10: реклама не повинна вчитися на тих, хто підписався й одразу пішов.
+    // Перевіряємо в момент відправки — тобто після затримки S3-09.
+    if (
+      event.eventName === CONVERSION_EVENTS.subscribe &&
+      event.workspace.skipQuickUnsubscribes &&
+      (event.subscriberProfile?._count.unsubscribeEvents ?? 0) > 0
+    ) {
+      await this.prisma.conversionEvent.update({
+        where: { id: event.id },
+        data: { status: ConversionEventStatus.SKIPPED_UNSUBSCRIBED },
       });
-      const delayMin = campaign?.conversionDelayMinutes ?? 0;
-      if (delayMin > 0) {
-        const quickUnsub = await this.prisma.unsubscribeEvent.findFirst({
-          where: {
-            subscriberProfileId: event.subscriberProfileId,
-            occurredAt: {
-              lte: new Date(event.eventTime.getTime() + delayMin * 60 * 1000),
-            },
-          },
-        });
-        if (quickUnsub) {
-          await this.prisma.conversionEvent.update({
-            where: { id: event.id },
-            data: { status: ConversionEventStatus.SKIPPED_POLICY_RESTRICTION },
-          });
-          return;
-        }
-      }
+      return;
     }
 
-    const consent = event.consentSnapshot as unknown as ConsentSnapshot;
+    const click = event.clickEventId
+      ? await this.prisma.clickEvent.findUnique({
+          where: { id: event.clickEventId },
+          include: { trackingLink: { select: { slug: true, linkMode: true } } },
+        })
+      : null;
+    const eventSourceUrl = click?.trackingLink
+      ? `${resolveFrontendUrl()}${getPublicLinkPath(click.trackingLink.linkMode as LinkMode, click.trackingLink.slug)}`
+      : undefined;
+
+    const payload: ConversionPayload = {
+      eventName: event.eventName,
+      eventTime: event.eventTime,
+      eventId: event.eventId,
+      consent: event.consentSnapshot as unknown as ConsentSnapshot,
+      click,
+      externalIdHash: event.subscriberProfile?.externalIdHash,
+      eventSourceUrl,
+    };
+
     const eligibility = event.eligibilityFlags as Record<string, { eligible: boolean }>;
-    const click = event.attribution?.clickEvent;
+    const senders: Array<[string, ConversionPlatform, Sender]> = [
+      ['meta', ConversionPlatform.META, (w, p) => this.meta.sendEvent(w, p)],
+      ['ga4', ConversionPlatform.GA4, (w, p) => this.ga4.sendEvent(w, p)],
+      ['google_ads', ConversionPlatform.GOOGLE_ADS, (w, p) => this.googleAds.sendEvent(w, p)],
+      ['tiktok', ConversionPlatform.TIKTOK, (w, p) => this.tiktok.sendEvent(w, p)],
+    ];
 
-    const deliveries: Array<{ platform: ConversionPlatform; result: Awaited<ReturnType<MetaService['sendEvent']>> }> = [];
-
-    if (eligibility?.meta?.eligible) {
-      const result = await this.meta.sendEvent(event.workspaceId, {
-        eventName: event.eventName,
-        eventTime: event.eventTime,
-        eventId: event.eventId,
-        consent,
-        click,
-        externalIdHash: event.subscriberProfile?.externalIdHash,
-      });
-      deliveries.push({ platform: ConversionPlatform.META, result });
+    const deliveries: Array<{ platform: ConversionPlatform; result: DeliveryResult }> = [];
+    for (const [key, platform, send] of senders) {
+      if (!eligibility?.[key]?.eligible) continue;
+      deliveries.push({ platform, result: await send(event.workspaceId, payload) });
     }
 
-    if (eligibility?.ga4?.eligible) {
-      const result = await this.ga4.sendEvent(event.workspaceId, {
-        eventName: event.eventName,
-        eventTime: event.eventTime,
-        eventId: event.eventId,
-        consent,
-        click,
-        externalIdHash: event.subscriberProfile?.externalIdHash,
-      });
-      deliveries.push({ platform: ConversionPlatform.GA4, result });
-    }
+    // «Пропущено» (інтеграцію вимкнули, немає дії для цієї цілі) — не помилка.
+    const attempted = deliveries.filter((d) => !d.result.skipped);
+    const status =
+      attempted.length === 0
+        ? ConversionEventStatus.SKIPPED_NO_IDENTIFIER
+        : attempted.some((d) => d.result.success)
+          ? ConversionEventStatus.SENT
+          : ConversionEventStatus.FAILED;
 
-    if (eligibility?.google_ads?.eligible) {
-      const result = await this.googleAds.sendEvent(event.workspaceId, {
-        eventName: event.eventName,
-        eventTime: event.eventTime,
-        eventId: event.eventId,
-        consent,
-        click,
-        externalIdHash: event.subscriberProfile?.externalIdHash,
-      });
-      deliveries.push({ platform: ConversionPlatform.GOOGLE_ADS, result });
-    }
-
-    if (eligibility?.tiktok?.eligible) {
-      const result = await this.tiktok.sendEvent(event.workspaceId, {
-        eventName: event.eventName,
-        eventTime: event.eventTime,
-        eventId: event.eventId,
-        consent,
-        click,
-        externalIdHash: event.subscriberProfile?.externalIdHash,
-      });
-      deliveries.push({ platform: ConversionPlatform.TIKTOK, result });
-    }
-
-    const anySuccess = deliveries.some((d) => d.result.success);
-    const allSkipped = deliveries.length === 0;
-
-    await this.prisma.conversionEvent.update({
-      where: { id: event.id },
-      data: {
-        status: allSkipped
-          ? event.status
-          : anySuccess
-            ? ConversionEventStatus.SENT
-            : ConversionEventStatus.FAILED,
-      },
-    });
+    await this.prisma.conversionEvent.update({ where: { id: event.id }, data: { status } });
 
     for (const { platform, result } of deliveries) {
       await this.prisma.conversionDeliveryLog.create({
         data: {
           conversionEventId: event.id,
           platform,
-          status: result.success ? ConversionEventStatus.SENT : ConversionEventStatus.FAILED,
+          status: result.success
+            ? ConversionEventStatus.SENT
+            : result.skipped
+              ? ConversionEventStatus.SKIPPED_POLICY_RESTRICTION
+              : ConversionEventStatus.FAILED,
           requestPayload: result.requestPayload as object,
           responseStatus: result.responseStatus,
           responseBody: result.responseBody as object,

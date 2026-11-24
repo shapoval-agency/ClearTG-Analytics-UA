@@ -49,6 +49,16 @@ model Workspace {
   dataRetentionDays Int     @default(365) @map("data_retention_days")
   privacyPolicyUrl  String? @map("privacy_policy_url")
 
+  // Етап 03: що й коли передаємо в рекламні кабінети.
+  // S3-09: затримка відправки підписки (години); кампанія з власною затримкою має пріоритет.
+  conversionDelayHours   Int     @default(0) @map("conversion_delay_hours")
+  // S3-10: перед відправкою перевіряти, що людина ще в каналі.
+  skipQuickUnsubscribes  Boolean @default(true) @map("skip_quick_unsubscribes")
+  // S3-12: окрема ціль «дійшов до Telegram».
+  sendReachEvent         Boolean @default(false) @map("send_reach_event")
+  // S3-16: окрема ціль «забрав подарок».
+  sendGiftEvent          Boolean @default(false) @map("send_gift_event")
+
   members              WorkspaceMember[]
   channels             Channel[]
   campaigns            Campaign[]
@@ -615,6 +625,7 @@ model TikTokIntegration {
 enum EventSource {
   TELEGRAM_SUBSCRIPTION
   TELEGRAM_RETENTION
+  TELEGRAM_REACH
   LEAD_MAGNET
   MANUAL
 }
@@ -626,6 +637,7 @@ enum ConversionEventStatus {
   SKIPPED_NO_CONSENT
   SKIPPED_NO_IDENTIFIER
   SKIPPED_POLICY_RESTRICTION
+  SKIPPED_UNSUBSCRIBED
 }
 
 enum ConversionPlatform {
