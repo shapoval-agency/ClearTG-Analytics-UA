@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, Optional, forwardRef } from '@nestjs/common';
+import { ConversionService } from '../conversion/conversion.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { InviteLinkService } from '../telegram/invite-link.service';
@@ -75,6 +76,7 @@ export class TrackingService {
     private crypto: CryptoService,
     @Inject(forwardRef(() => InviteLinkService))
     private inviteLinks: InviteLinkService,
+    @Optional() private conversion?: ConversionService,
   ) {}
 
   /**
@@ -454,6 +456,7 @@ export class TrackingService {
     const telegramUrl = await this.resolveDestination(link, clickEvent.id);
     const apiOrigin = resolveFrontendUrl();
     const pageContext = this.buildPageContext(link, telegramUrl ?? 'https://t.me', clickEvent.id, apiOrigin);
+    pageContext.adTags = await this.resolveAdTags(link.workspaceId, consent);
 
     /**
      * Раніше при миттєвому редиректі сервер сам ставив telegramOpenedAt — і
@@ -509,6 +512,52 @@ export class TrackingService {
     };
   }
 
+  /**
+   * S3-13: які рекламні теги можна поставити на сторінці переходу — лише
+   * увімкнені інтеграції і лише з дозволу людини для цієї платформи.
+   */
+  private async resolveAdTags(workspaceId: string, consent: ReturnType<typeof parseConsentFromQuery>) {
+    if (!consent.meta_allowed && !consent.ga4_allowed) return undefined;
+    const [meta, ga4] = await Promise.all([
+      consent.meta_allowed
+        ? this.prisma.metaIntegration.findFirst({ where: { workspaceId, isActive: true }, select: { pixelId: true } })
+        : null,
+      consent.ga4_allowed
+        ? this.prisma.gA4Integration.findFirst({ where: { workspaceId, isActive: true }, select: { measurementId: true } })
+        : null,
+    ]);
+    if (!meta && !ga4) return undefined;
+    return { metaPixelId: meta?.pixelId, ga4MeasurementId: ga4?.measurementId };
+  }
+
+  /**
+   * S3-13: cookies _fbp / _ga зі сторінки переходу. Приймаємо лише для свіжого
+   * кліку (до 30 хв), у суворому форматі і без перезапису вже відомих значень —
+   * сторонній запит не може підмінити ідентифікатори.
+   */
+  async recordIdentity(clickId: string, data: { fbp?: unknown; gaClientId?: unknown; gaSessionId?: unknown }) {
+    const click = await this.prisma.clickEvent.findUnique({
+      where: { id: clickId },
+      select: { clickedAt: true, fbp: true, gaClientId: true, gaSessionId: true },
+    });
+    if (!click || Date.now() - click.clickedAt.getTime() > 30 * 60 * 1000) return { ok: true };
+
+    const update: { fbp?: string; gaClientId?: string; gaSessionId?: string } = {};
+    if (!click.fbp && typeof data.fbp === 'string' && /^fb\.\d\.\d{10,13}\.\d{1,25}$/.test(data.fbp)) {
+      update.fbp = data.fbp;
+    }
+    if (!click.gaClientId && typeof data.gaClientId === 'string' && /^\d{1,12}\.\d{9,11}$/.test(data.gaClientId)) {
+      update.gaClientId = data.gaClientId;
+    }
+    if (!click.gaSessionId && typeof data.gaSessionId === 'string' && /^\d{9,11}$/.test(data.gaSessionId)) {
+      update.gaSessionId = data.gaSessionId;
+    }
+    if (Object.keys(update).length > 0) {
+      await this.prisma.clickEvent.update({ where: { id: clickId }, data: update });
+    }
+    return { ok: true };
+  }
+
   async recordTelegramOpen(clickId: string) {
     const click = await this.prisma.clickEvent.findUnique({
       where: { id: clickId },
@@ -521,11 +570,19 @@ export class TrackingService {
       data: { telegramOpenedAt: new Date() },
     });
 
+    // S3-12: окрема ціль «дійшов до Telegram». Збій тут не повинен ламати маячок.
+    await this.conversion?.createReachEvent(clickId).catch(() => null);
+
     return { ok: true };
   }
 
+  /**
+   * Скрипт для сайту клієнта: підміняє посилання t.me на наше трекінгове.
+   * S3-14: перед переходом перевіряє, що ClearTG відповідає (до 1,5 с). Якщо ні —
+   * людина йде за початковим t.me-посиланням: аналітика не ламає трафік.
+   */
   getEmbedScript() {
-    return `(function(){var s=document.currentScript;var slug=s&&s.getAttribute("data-slug");var app=(s&&s.getAttribute("data-app-url"))||"";var path=(s&&s.getAttribute("data-path"))||("/l/"+slug);if(!slug||!app)return;function bind(root){(root||document).querySelectorAll('a[href*="t.me/"]').forEach(function(a){if(a.dataset.ctg)return;a.dataset.ctg="1";a.addEventListener("click",function(e){e.preventDefault();var original=a.href;var q=new URLSearchParams(location.search);q.set("ctg_fallback",original);var u=app.replace(/\\/$/,"")+path+(q.toString()?"?"+q:"");location.href=u;});});}function start(){bind(document);if(window.MutationObserver)new MutationObserver(function(){bind(document);}).observe(document.documentElement,{childList:true,subtree:true});}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();})();`;
+    return `(function(){var s=document.currentScript;var slug=s&&s.getAttribute("data-slug");var app=(s&&s.getAttribute("data-app-url"))||"";var path=(s&&s.getAttribute("data-path"))||("/l/"+slug);if(!slug||!app)return;var base=app.replace(/\\/$/,"");function go(original){var q=new URLSearchParams(location.search);q.set("ctg_fallback",original);var u=base+path+(q.toString()?"?"+q:"");var done=false;function to(url){if(done)return;done=true;location.href=url;}var timer=setTimeout(function(){to(original);},1500);try{fetch(base+"/api/tracking/ping",{cache:"no-store"}).then(function(r){clearTimeout(timer);to(r.ok?u:original);},function(){clearTimeout(timer);to(original);});}catch(e){clearTimeout(timer);to(original);}}function bind(root){(root||document).querySelectorAll('a[href*="t.me/"]').forEach(function(a){if(a.dataset.ctg)return;a.dataset.ctg="1";a.addEventListener("click",function(e){e.preventDefault();go(a.href);});});}function start(){bind(document);if(window.MutationObserver)new MutationObserver(function(){bind(document);}).observe(document.documentElement,{childList:true,subtree:true});}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();})();`;
   }
 
   async getEmbedSnippet(workspaceId: string, slug: string) {

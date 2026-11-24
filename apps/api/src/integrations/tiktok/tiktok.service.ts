@@ -22,7 +22,7 @@ export class TikTokService {
       where: { workspaceId, isActive: true },
     });
     if (!integration) {
-      return { success: false, error: 'No active TikTok integration' };
+      return { success: false, skipped: true, error: 'No active TikTok integration' };
     }
 
     const eventInput = {

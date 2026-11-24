@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { apiErrorText, checkResult, type IntegrationCheckItem, type IntegrationCheckResult } from '../integration-check';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../../crypto/crypto.service';
@@ -7,7 +8,14 @@ import { ConversionPayload, DeliveryResult } from '../meta/meta.service';
 import {
   buildUploadClickConversionBody,
   canUploadGoogleConversion,
+  CONVERSION_EVENTS,
 } from '@cleartg/shared';
+
+/** Дії-конверсії для додаткових цілей (S3-12, S3-16) зберігаються в eventMapping. */
+interface GoogleAdsEventMapping {
+  [CONVERSION_EVENTS.reach]?: string;
+  [CONVERSION_EVENTS.gift]?: string;
+}
 
 const API_VERSION = 'v18';
 
@@ -26,10 +34,12 @@ export class GoogleAdsService {
       customerId: string;
       conversionActionId: string;
       managerAccountId?: string;
+      reachConversionActionId?: string;
+      giftConversionActionId?: string;
       oauthCredentialsEnc?: string;
     },
   ) {
-    const customerId = data.customerId.replace(/-/g, '');
+    const customerId = data.customerId.replace(/[-\s]/g, '');
     const existing = await this.prisma.googleAdsIntegration.findFirst({ where: { workspaceId } });
 
     const oauthCredentialsEnc =
@@ -37,27 +47,24 @@ export class GoogleAdsService {
       existing?.oauthCredentialsEnc ??
       this.crypto.encrypt(JSON.stringify({ access_token: '', expires_at: 0 }));
 
-    if (existing) {
-      return this.prisma.googleAdsIntegration.update({
-        where: { id: existing.id },
-        data: {
-          customerId,
-          conversionActionId: data.conversionActionId,
-          managerAccountId: data.managerAccountId?.replace(/-/g, ''),
-          oauthCredentialsEnc,
-        },
-      });
-    }
+    const eventMapping: GoogleAdsEventMapping = {};
+    if (data.reachConversionActionId?.trim()) eventMapping[CONVERSION_EVENTS.reach] = data.reachConversionActionId.trim();
+    if (data.giftConversionActionId?.trim()) eventMapping[CONVERSION_EVENTS.gift] = data.giftConversionActionId.trim();
 
-    return this.prisma.googleAdsIntegration.create({
-      data: {
-        workspaceId,
-        customerId,
-        conversionActionId: data.conversionActionId,
-        managerAccountId: data.managerAccountId?.replace(/-/g, ''),
-        oauthCredentialsEnc,
-      },
-    });
+    const fields = {
+      customerId,
+      conversionActionId: data.conversionActionId.trim(),
+      managerAccountId: data.managerAccountId?.replace(/[-\s]/g, '') || null,
+      oauthCredentialsEnc,
+      eventMapping: eventMapping as object,
+      // Нові дані = нова перевірка: відправка вимкнена, доки verify() не пройде (S3-01).
+      isActive: false,
+    };
+
+    if (existing) {
+      return this.prisma.googleAdsIntegration.update({ where: { id: existing.id }, data: fields });
+    }
+    return this.prisma.googleAdsIntegration.create({ data: { workspaceId, ...fields } });
   }
 
   async saveOAuthTokens(workspaceId: string, tokensEnc: string) {
@@ -83,13 +90,17 @@ export class GoogleAdsService {
       oauthConnected = false;
     }
 
+    const mapping = (integration.eventMapping ?? {}) as GoogleAdsEventMapping;
     return {
       id: integration.id,
       customerId: integration.customerId,
       conversionActionId: integration.conversionActionId,
+      reachConversionActionId: mapping[CONVERSION_EVENTS.reach] ?? null,
+      giftConversionActionId: mapping[CONVERSION_EVENTS.gift] ?? null,
       managerAccountId: integration.managerAccountId,
       isActive: integration.isActive,
       oauthConnected,
+      developerTokenConfigured: Boolean(this.config.get<string>('GOOGLE_ADS_DEVELOPER_TOKEN')),
     };
   }
 
@@ -98,7 +109,18 @@ export class GoogleAdsService {
       where: { workspaceId, isActive: true },
     });
     if (!integration) {
-      return { success: false, error: 'No active Google Ads integration' };
+      return { success: false, skipped: true, error: 'No active Google Ads integration' };
+    }
+
+    // Кожна ціль — своя дія-конверсія в Google Ads. Без неї подію не шлемо,
+    // щоб «дійшов до Telegram» не рахувався як підписка.
+    const mapping = (integration.eventMapping ?? {}) as GoogleAdsEventMapping;
+    const conversionActionId =
+      payload.eventName === CONVERSION_EVENTS.subscribe
+        ? integration.conversionActionId
+        : mapping[payload.eventName as keyof GoogleAdsEventMapping];
+    if (!conversionActionId) {
+      return { success: false, skipped: true, error: `No Google Ads conversion action for ${payload.eventName}` };
     }
 
     const developerToken = this.config.get<string>('GOOGLE_ADS_DEVELOPER_TOKEN');
@@ -108,7 +130,7 @@ export class GoogleAdsService {
 
     const conversionInput = {
       customerId: integration.customerId,
-      conversionActionId: integration.conversionActionId,
+      conversionActionId,
       eventTime: payload.eventTime,
       eventId: payload.eventId,
       currency: 'UAH',
@@ -122,6 +144,7 @@ export class GoogleAdsService {
     if (!canUploadGoogleConversion(conversionInput)) {
       return {
         success: false,
+        skipped: true,
         error: 'skipped_no_identifier: no gclid/gbraid/wbraid or permitted user identifier',
       };
     }
@@ -129,6 +152,7 @@ export class GoogleAdsService {
     if (payload.consent.ad_personalization === 'denied') {
       return {
         success: false,
+        skipped: true,
         error: 'skipped_policy_restriction: ad_personalization denied',
       };
     }
@@ -209,5 +233,99 @@ export class GoogleAdsService {
       click: { gclid: 'TEST_GCLID_CLEARTG_DEV' },
       externalIdHash: 'test_external_id_hash',
     });
+  }
+
+  /**
+   * S3-01: перевірка до запуску — є developer token, OAuth-доступ живий,
+   * дія-конверсія існує, увімкнена і приймає завантаження кліків.
+   */
+  async verify(workspaceId: string): Promise<IntegrationCheckResult> {
+    const integration = await this.prisma.googleAdsIntegration.findFirst({ where: { workspaceId } });
+    if (!integration) throw new NotFoundException('Спочатку збережіть Customer ID і дію-конверсію Google Ads');
+
+    const checks: IntegrationCheckItem[] = [];
+    const developerToken = this.config.get<string>('GOOGLE_ADS_DEVELOPER_TOKEN');
+    if (!developerToken) {
+      checks.push({ id: 'developer_token', label: 'Доступ ClearTG до Google Ads API', status: 'error', detail: 'На сервері не налаштовано GOOGLE_ADS_DEVELOPER_TOKEN — зверніться до підтримки ClearTG.' });
+      return checkResult(checks);
+    }
+
+    let accessToken: string;
+    try {
+      const tokens = await this.oauth.getValidAccessToken(integration.oauthCredentialsEnc);
+      if (!tokens.accessToken) throw new Error('empty');
+      accessToken = tokens.accessToken;
+      if (tokens.updatedEnc) {
+        await this.prisma.googleAdsIntegration.update({ where: { id: integration.id }, data: { oauthCredentialsEnc: tokens.updatedEnc } });
+      }
+      checks.push({ id: 'oauth', label: 'Вхід через Google', status: 'ok', detail: 'Доступ до акаунта Google Ads підтверджено.' });
+    } catch {
+      checks.push({ id: 'oauth', label: 'Вхід через Google', status: 'error', detail: 'Натисніть «Увійти через Google» і дайте доступ до Google Ads.' });
+      return checkResult(checks);
+    }
+
+    const mapping = (integration.eventMapping ?? {}) as GoogleAdsEventMapping;
+    const actions: Array<[string, string, string | undefined]> = [
+      ['subscribe', 'Дія-конверсія «Підписка»', integration.conversionActionId],
+      ['reach', 'Дія-конверсія «Дійшов до Telegram»', mapping[CONVERSION_EVENTS.reach]],
+      ['gift', 'Дія-конверсія «Забрав подарок»', mapping[CONVERSION_EVENTS.gift]],
+    ];
+    const customerId = integration.customerId.replace(/-/g, '');
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${accessToken}`,
+      'developer-token': developerToken,
+      'Content-Type': 'application/json',
+    };
+    if (integration.managerAccountId) headers['login-customer-id'] = integration.managerAccountId.replace(/-/g, '');
+
+    for (const [id, label, actionId] of actions) {
+      if (!actionId) continue;
+      if (!/^\d+$/.test(actionId)) {
+        checks.push({ id, label, status: 'error', detail: 'ID дії-конверсії — це число з адреси сторінки дії в Google Ads.' });
+        continue;
+      }
+      try {
+        const res = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:search`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            query: `SELECT conversion_action.id, conversion_action.name, conversion_action.status, conversion_action.type FROM conversion_action WHERE conversion_action.id = ${actionId}`,
+          }),
+        });
+        const body = (await res.json().catch(() => null)) as {
+          results?: Array<{ conversionAction?: { name?: string; status?: string; type?: string } }>;
+        } | null;
+        if (!res.ok) {
+          checks.push({ id, label, status: 'error', detail: `Google Ads відхилив запит: ${apiErrorText(body, `HTTP ${res.status}`)}. Перевірте Customer ID${integration.managerAccountId ? ' і ID менеджерського акаунта' : ''}.` });
+          continue;
+        }
+        const action = body?.results?.[0]?.conversionAction;
+        if (!action) {
+          checks.push({ id, label, status: 'error', detail: `Дію-конверсію ${actionId} не знайдено в акаунті ${integration.customerId}.` });
+        } else if (action.status !== 'ENABLED') {
+          checks.push({ id, label, status: 'error', detail: `Дія «${action.name}» не увімкнена (${action.status}).` });
+        } else if (action.type !== 'UPLOAD_CLICKS') {
+          checks.push({ id, label, status: 'error', detail: `Дія «${action.name}» має тип ${action.type}. Потрібен тип «Імпорт → кліки» (UPLOAD_CLICKS).` });
+        } else {
+          checks.push({ id, label, status: 'ok', detail: `«${action.name}» готова приймати конверсії.` });
+        }
+      } catch {
+        checks.push({ id, label, status: 'error', detail: 'Не вдалося зв’язатися з Google Ads. Спробуйте ще раз.' });
+      }
+    }
+    return checkResult(checks);
+  }
+
+  async setActive(workspaceId: string, isActive: boolean) {
+    const integration = await this.prisma.googleAdsIntegration.findFirst({ where: { workspaceId } });
+    if (!integration) throw new NotFoundException('Google Ads не підключено');
+    if (isActive) {
+      const check = await this.verify(workspaceId);
+      if (!check.ok) {
+        throw new BadRequestException(check.checks.find((c) => c.status === 'error')?.detail ?? 'Перевірка не пройдена');
+      }
+    }
+    await this.prisma.googleAdsIntegration.update({ where: { id: integration.id }, data: { isActive } });
+    return this.getIntegration(workspaceId);
   }
 }

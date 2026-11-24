@@ -290,4 +290,17 @@ export class TrackingOpenController {
   openTelegram(@Param('clickId') clickId: string) {
     return this.tracking.recordTelegramOpen(clickId);
   }
+
+  /** S3-13: рекламні cookies (_fbp, _ga) зі сторінки переходу. */
+  @Post('identity/:clickId')
+  identity(@Param('clickId') clickId: string, @Body() body: Record<string, unknown>) {
+    return this.tracking.recordIdentity(clickId, body ?? {});
+  }
+
+  /** S3-14: скрипт на сайті клієнта перевіряє, що ClearTG відповідає, перш ніж вести через нас. */
+  @Get('ping')
+  @Header('Cache-Control', 'no-store')
+  ping() {
+    return { ok: true };
+  }
 }

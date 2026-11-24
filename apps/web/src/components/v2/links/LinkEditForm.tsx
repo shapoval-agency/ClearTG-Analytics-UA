@@ -3,11 +3,13 @@
 import { useMemo, useState, useTransition } from 'react';
 import { updateTrackingLinkV2Action } from '@/app/v2/actions';
 import { CustomSelect } from '@/components/v2/CustomSelect';
+import { OpenModePicker } from './OpenModePicker';
 import type { BuilderBot, BuilderCampaign } from './LinkBuilder';
 import {
   DESTINATION_MODE,
   isTelegramPersonalUrl,
   normalizePersonalUrl,
+  openModeSettings,
   type EditableLink,
   type LinkDestinationKind,
 } from './link-kind';
@@ -96,7 +98,7 @@ export function LinkEditForm({
         landingPostUrl: form.destination === 'post' ? form.postUrl : null,
         destinationUrl: form.destination === 'personal' ? normalizePersonalUrl(form.personalUrl) : null,
         botConnectionId: form.destination === 'bot' ? form.botConnectionId : null,
-        autoRedirect: !form.measureReach,
+        ...openModeSettings(form.openMode),
       });
       if (res.error) {
         setError(res.error);
@@ -182,17 +184,7 @@ export function LinkEditForm({
         </div>
       )}
 
-      <label className="flex items-start gap-2 text-sm">
-        <input type="checkbox" className="mt-1" checked={form.measureReach}
-          onChange={(e) => set('measureReach', e.target.checked)} />
-        <span>
-          <span className="font-medium text-slate-900">Перевіряти перехід у Telegram</span>
-          <span className="block text-xs text-slate-500">
-            Сторінка з кнопкою замість миттєвого переходу — тоді «Дійшли до Telegram» рахується чесно.
-            Діє на нові кліки.
-          </span>
-        </span>
-      </label>
+      <OpenModePicker compact name={`edit-open-${linkId}`} value={form.openMode} onChange={(m) => set('openMode', m)} />
 
       <details>
         <summary className="cursor-pointer text-sm text-slate-600">Мітки для звітів</summary>

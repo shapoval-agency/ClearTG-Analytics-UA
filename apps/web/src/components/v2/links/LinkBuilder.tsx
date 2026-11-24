@@ -18,12 +18,15 @@ import {
   parseBulkLines,
   normalizePersonalUrl,
   isTelegramPersonalUrl,
+  openModeSettings,
   type EditableLink,
+  type OpenMode,
   type LinkDestinationKind,
   type LinkKind,
   type TrafficSource,
 } from './link-kind';
 import { CustomSelect } from '@/components/v2/CustomSelect';
+import { OpenModePicker } from './OpenModePicker';
 
 export interface BuilderChannel {
   id: string;
@@ -104,7 +107,7 @@ export function LinkBuilder({
   const [botConnectionId, setBotConnectionId] = useState(
     initial?.botConnectionId || activeBots[0]?.id || '',
   );
-  const [measureReach, setMeasureReach] = useState(initial?.measureReach ?? false);
+  const [openMode, setOpenMode] = useState<OpenMode>(initial?.openMode ?? 'instant');
   const [bulk, setBulk] = useState(false);
   const [bulkText, setBulkText] = useState('');
 
@@ -240,7 +243,7 @@ export function LinkBuilder({
         landingPostUrl: destination === 'post' ? postUrl : undefined,
         destinationUrl: destination === 'personal' ? normalizePersonalUrl(personalUrl) : undefined,
         botConnectionId: destination === 'bot' ? botConnectionId : undefined,
-        autoRedirect: !measureReach,
+        ...openModeSettings(openMode),
       };
 
       if (bulk) {
@@ -581,22 +584,7 @@ export function LinkBuilder({
             </div>
           )}
 
-          <label className="mb-4 flex items-start gap-2 rounded-xl border border-slate-200 p-3 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={measureReach}
-              onChange={(e) => setMeasureReach(e.target.checked)}
-            />
-            <span>
-              <span className="block font-medium text-slate-900">Перевіряти перехід у Telegram</span>
-              <span className="block text-slate-500">
-                Людина побачить коротку сторінку з кнопкою «Відкрити Telegram» — так ми чесно рахуємо, скільки
-                кліків справді дійшли. Без цього перехід миттєвий, а «Дійшли до Telegram» не вимірюється.
-                Можна змінити пізніше — адреса посилання не зміниться.
-              </span>
-            </span>
-          </label>
+          <OpenModePicker name="v2-link-open-mode" value={openMode} onChange={setOpenMode} />
 
           <button
             type="button"
