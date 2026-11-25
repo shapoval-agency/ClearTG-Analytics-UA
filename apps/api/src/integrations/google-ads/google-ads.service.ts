@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { apiErrorText, checkResult, type IntegrationCheckItem, type IntegrationCheckResult } from '../integration-check';
+import { conversionsDryRun, dryRunResult, DRY_RUN_CHECK } from '../dry-run';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../../crypto/crypto.service';
@@ -101,6 +102,7 @@ export class GoogleAdsService {
       isActive: integration.isActive,
       oauthConnected,
       developerTokenConfigured: Boolean(this.config.get<string>('GOOGLE_ADS_DEVELOPER_TOKEN')),
+      dryRun: conversionsDryRun(),
     };
   }
 
@@ -123,8 +125,9 @@ export class GoogleAdsService {
       return { success: false, skipped: true, error: `No Google Ads conversion action for ${payload.eventName}` };
     }
 
+    const dryRun = conversionsDryRun();
     const developerToken = this.config.get<string>('GOOGLE_ADS_DEVELOPER_TOKEN');
-    if (!developerToken) {
+    if (!developerToken && !dryRun) {
       return { success: false, error: 'GOOGLE_ADS_DEVELOPER_TOKEN not configured' };
     }
 
@@ -158,6 +161,14 @@ export class GoogleAdsService {
     }
 
     const requestBody = buildUploadClickConversionBody(conversionInput);
+
+    if (dryRun || !developerToken) {
+      return dryRunResult(
+        'google_ads',
+        `https://googleads.googleapis.com/${API_VERSION}/customers/${integration.customerId}:uploadClickConversions`,
+        requestBody,
+      );
+    }
 
     try {
       const { accessToken, updatedEnc } = await this.oauth.getValidAccessToken(
@@ -244,6 +255,22 @@ export class GoogleAdsService {
     if (!integration) throw new NotFoundException('Спочатку збережіть Customer ID і дію-конверсію Google Ads');
 
     const checks: IntegrationCheckItem[] = [];
+    if (conversionsDryRun()) {
+      const mappingDry = (integration.eventMapping ?? {}) as GoogleAdsEventMapping;
+      for (const [id, label, actionId] of [
+        ['subscribe', 'Дія-конверсія «Підписка»', integration.conversionActionId],
+        ['reach', 'Дія-конверсія «Дійшов до Telegram»', mappingDry[CONVERSION_EVENTS.reach]],
+        ['gift', 'Дія-конверсія «Забрав подарок»', mappingDry[CONVERSION_EVENTS.gift]],
+      ] as Array<[string, string, string | undefined]>) {
+        if (!actionId) continue;
+        checks.push(/^\d+$/.test(actionId)
+          ? { id, label, status: 'ok', detail: `ID ${actionId}` }
+          : { id, label, status: 'error', detail: 'ID дії-конверсії — це число з адреси сторінки дії в Google Ads.' });
+      }
+      checks.push(DRY_RUN_CHECK);
+      return checkResult(checks);
+    }
+
     const developerToken = this.config.get<string>('GOOGLE_ADS_DEVELOPER_TOKEN');
     if (!developerToken) {
       checks.push({ id: 'developer_token', label: 'Доступ ClearTG до Google Ads API', status: 'error', detail: 'На сервері не налаштовано GOOGLE_ADS_DEVELOPER_TOKEN — зверніться до підтримки ClearTG.' });

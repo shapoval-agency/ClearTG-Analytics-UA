@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { conversionsDryRun, dryRunResult } from '../dry-run';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../../crypto/crypto.service';
 import { ConversionPayload, DeliveryResult } from '../meta/meta.service';
@@ -53,6 +54,10 @@ export class TikTokService {
 
     const accessToken = this.crypto.decrypt(integration.accessTokenEnc);
     const requestBody = buildTikTokEventPayload(eventInput);
+
+    if (conversionsDryRun()) {
+      return dryRunResult('tiktok', TIKTOK_EVENTS_URL, requestBody);
+    }
 
     try {
       const response = await fetch(TIKTOK_EVENTS_URL, {

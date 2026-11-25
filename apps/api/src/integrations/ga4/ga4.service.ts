@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { checkResult, type IntegrationCheckItem, type IntegrationCheckResult } from '../integration-check';
+import { conversionsDryRun, dryRunResult, DRY_RUN_CHECK } from '../dry-run';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../../crypto/crypto.service';
 import { ConversionPayload, DeliveryResult } from '../meta/meta.service';
@@ -53,6 +54,10 @@ export class GA4Service {
 
     if (payload.externalIdHash && payload.consent.analytics_storage === 'granted') {
       body.user_id = payload.externalIdHash;
+    }
+
+    if (conversionsDryRun()) {
+      return dryRunResult('ga4', `https://www.google-analytics.com/mp/collect?measurement_id=${integration.measurementId}`, body);
     }
 
     try {
@@ -155,6 +160,10 @@ export class GA4Service {
       return checkResult(checks);
     }
     checks.push({ id: 'measurement_id', label: 'Measurement ID', status: 'ok', detail: integration.measurementId });
+    if (conversionsDryRun()) {
+      checks.push(DRY_RUN_CHECK);
+      return checkResult(checks);
+    }
 
     let secret: string;
     try {

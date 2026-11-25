@@ -13,6 +13,7 @@ import {
   type ConversionPlatform,
 } from '@cleartg/shared';
 import { ClickEvent, ConversionEventStatus, EventSource } from '@cleartg/database';
+import { conversionsDryRun } from '../integrations/dry-run';
 
 export const CONVERSION_QUEUE = 'conversion-delivery';
 
@@ -153,7 +154,8 @@ export class ConversionService {
    */
   async getSettings(workspaceId: string) {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [workspace, connected, byStatus, byEvent, recentFailures] = await Promise.all([
+    const dryRun = conversionsDryRun();
+    const [workspace, connected, byStatus, byEvent, recentFailures, recentDeliveries] = await Promise.all([
       this.prisma.workspace.findUniqueOrThrow({
         where: { id: workspaceId },
         select: { conversionDelayHours: true, skipQuickUnsubscribes: true, sendReachEvent: true, sendGiftEvent: true },
@@ -175,10 +177,26 @@ export class ConversionService {
         take: 5,
         select: { platform: true, errorMessage: true, deliveredAt: true, conversionEvent: { select: { eventName: true } } },
       }),
+      // Сухий прогін: показуємо, що саме пішло б у рекламні системи — для QA без доступу до БД.
+      dryRun
+        ? this.prisma.conversionDeliveryLog.findMany({
+            where: { conversionEvent: { workspaceId }, deliveredAt: { gte: since } },
+            orderBy: { deliveredAt: 'desc' },
+            take: 10,
+            select: { platform: true, requestPayload: true, deliveredAt: true, conversionEvent: { select: { eventName: true } } },
+          })
+        : Promise.resolve([]),
     ]);
 
     return {
       ...workspace,
+      dryRun,
+      recentDeliveries: recentDeliveries.map((d) => ({
+        platform: d.platform,
+        eventName: d.conversionEvent.eventName,
+        request: d.requestPayload,
+        at: d.deliveredAt,
+      })),
       connected: [...connected],
       last30Days: Object.fromEntries(byStatus.map((s) => [s.status, s._count])),
       byEvent: byEvent.map((e) => ({ eventName: e.eventName, status: e.status, count: e._count })),

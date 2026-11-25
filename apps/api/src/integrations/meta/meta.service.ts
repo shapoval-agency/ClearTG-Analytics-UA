@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { apiErrorText, checkResult, type IntegrationCheckItem, type IntegrationCheckResult } from '../integration-check';
+import { conversionsDryRun, dryRunResult, DRY_RUN_CHECK } from '../dry-run';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../../crypto/crypto.service';
 import { ConsentSnapshot, buildFbcFromFbclid } from '@cleartg/shared';
@@ -32,6 +33,8 @@ export interface DeliveryResult {
   success: boolean;
   /** Не відправлялось з очікуваної причини (вимкнено, немає дії для цілі) — не помилка. */
   skipped?: boolean;
+  /** Сухий прогін: запит сформовано, але не відправлено (CONVERSIONS_DRY_RUN). */
+  dryRun?: boolean;
   requestPayload?: unknown;
   responseStatus?: number;
   responseBody?: unknown;
@@ -94,6 +97,10 @@ export class MetaService {
     };
     if (integration.testEventCode) {
       body.test_event_code = integration.testEventCode;
+    }
+
+    if (conversionsDryRun()) {
+      return dryRunResult('meta', `${GRAPH}/${integration.pixelId}/events`, body);
     }
 
     try {
@@ -195,6 +202,11 @@ export class MetaService {
     const checks: IntegrationCheckItem[] = [];
     if (!/^\d{10,20}$/.test(integration.pixelId)) {
       checks.push({ id: 'pixel_format', label: 'Pixel ID', status: 'error', detail: 'Pixel ID складається лише з цифр (10–20). Скопіюйте його з Events Manager.' });
+      return checkResult(checks);
+    }
+
+    if (conversionsDryRun()) {
+      checks.push({ id: 'pixel_format', label: 'Pixel ID', status: 'ok', detail: integration.pixelId }, DRY_RUN_CHECK);
       return checkResult(checks);
     }
 

@@ -20,6 +20,7 @@ interface GoogleAdsIntegrationApi {
   isActive: boolean;
   oauthConnected: boolean;
   developerTokenConfigured?: boolean;
+  dryRun?: boolean;
 }
 
 const GOOGLE_NOTICE: Record<string, { tone: 'ok' | 'error'; text: string }> = {
@@ -89,7 +90,11 @@ export default async function V2AdsPage({
   }
 
   const notice = google ? GOOGLE_NOTICE[google] : null;
-  const googleDisabledReason = googleAds && googleAds.developerTokenConfigured === false
+  const dryRun = Boolean(settings?.dryRun || googleAds?.dryRun);
+  // У сухому прогоні вхід через Google і developer token не потрібні — нічого не відправляється.
+  const googleDisabledReason = dryRun
+    ? null
+    : googleAds && googleAds.developerTokenConfigured === false
     ? 'На сервері ClearTG ще не налаштовано доступ до Google Ads API — зверніться до підтримки.'
     : googleAds && !googleAds.oauthConnected
       ? 'Спершу виконайте вхід через Google.'
@@ -98,6 +103,16 @@ export default async function V2AdsPage({
   return (
     <>
       {header}
+      {dryRun && (
+        <div className="mb-5 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">
+          <p className="font-bold">Тестовий режим («сухий прогін»)</p>
+          <p className="mt-1">
+            Події проходять увесь шлях — підписка, затримка, відсів, — але в Meta, GA4 і Google Ads нічого не
+            відправляється. Можна вводити будь-які тестові дані підключення. Що саме пішло б у рекламу, видно внизу
+            сторінки. На робочому сервері цей режим вимикають (CONVERSIONS_DRY_RUN).
+          </p>
+        </div>
+      )}
       {notice && (
         <p className={`mb-5 rounded-xl border p-3 text-sm ${notice.tone === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'}`}>
           {notice.text}
@@ -139,7 +154,7 @@ export default async function V2AdsPage({
             configured={Boolean(googleAds)}
             isActive={Boolean(googleAds?.isActive)}
             disabledReason={googleDisabledReason}
-            extra={<GoogleSignIn connected={Boolean(googleAds?.oauthConnected)} saved={Boolean(googleAds)} />}
+            extra={dryRun ? null : <GoogleSignIn connected={Boolean(googleAds?.oauthConnected)} saved={Boolean(googleAds)} />}
             initialValues={{
               customerId: googleAds?.customerId ?? '',
               conversionActionId: googleAds?.conversionActionId ?? '',
