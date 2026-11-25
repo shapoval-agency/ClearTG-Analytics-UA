@@ -35,7 +35,9 @@ export function DeliverySummary({ settings }: { settings: ConversionSettings }) 
           <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {STATUS_ROWS.filter((r) => settings.last30Days[r.key]).map((r) => (
               <div key={r.key} className="rounded-xl bg-slate-50 p-3" title={r.hint}>
-                <dt className="text-xs text-slate-500">{r.label}</dt>
+                <dt className="text-xs text-slate-500">
+                  {settings.dryRun && r.key === 'SENT' ? 'Сформовано (не відправлено)' : r.label}
+                </dt>
                 <dd className={`text-xl font-bold tabular-nums ${r.tone}`}>{settings.last30Days[r.key]}</dd>
               </div>
             ))}
@@ -56,6 +58,29 @@ export function DeliverySummary({ settings }: { settings: ConversionSettings }) 
             </p>
           )}
         </>
+      )}
+
+      {settings.dryRun && (settings.recentDeliveries?.length ?? 0) > 0 && (
+        <div className="mt-4">
+          <h3 className="mb-2 text-sm font-bold text-[#102044]">Що пішло б у рекламу (тестовий режим)</h3>
+          <ul className="space-y-2 text-sm">
+            {settings.recentDeliveries!.map((d, i) => (
+              <li key={i}>
+                <details className="rounded-lg border border-violet-100 bg-violet-50/50 p-2.5">
+                  <summary className="cursor-pointer">
+                    <span className="font-medium text-violet-900">
+                      {PLATFORM_LABELS[d.platform] ?? d.platform} · {EVENT_LABELS[d.eventName] ?? d.eventName}
+                    </span>
+                    <span className="ml-2 text-xs text-slate-500">{formatDateUk(d.at)}</span>
+                  </summary>
+                  <pre className="mt-2 max-h-72 overflow-auto rounded bg-slate-900 p-2 text-xs text-slate-100">
+                    {JSON.stringify(d.request, null, 2)}
+                  </pre>
+                </details>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {settings.recentFailures.length > 0 && (

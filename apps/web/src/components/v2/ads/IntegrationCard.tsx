@@ -104,7 +104,9 @@ export function IntegrationCard({
     run(async () => {
       const res = await sendAdTestEventV2Action(platform);
       if (res.error) return setError(res.error);
-      setNotice('Тестову подію надіслано. Перевірте її в кабінеті рекламної системи.');
+      setNotice(res.dryRun
+        ? 'Тестовий режим: подію сформовано й записано в журнал доставки, у рекламну систему нічого не пішло.'
+        : 'Тестову подію надіслано. Перевірте її в кабінеті рекламної системи.');
     });
   }
 

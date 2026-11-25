@@ -573,18 +573,19 @@ export async function setAdIntegrationActiveV2Action(platform: AdPlatformKey, is
 }
 
 export async function sendAdTestEventV2Action(platform: AdPlatformKey) {
-  const res = await adsRequest<{ success: boolean; error?: string; skipped?: boolean }>(
+  const res = await adsRequest<{ success: boolean; error?: string; skipped?: boolean; dryRun?: boolean }>(
     `/api/integrations/${platform}/test-event`, { method: 'POST' }, 'Не вдалося надіслати тестову подію',
   );
-  if (res.error) return { error: res.error };
+  if (res.error) return { error: res.error, dryRun: false };
   if (!res.data?.success) {
     return {
       error: res.data?.skipped
         ? 'Тестова подія не пішла: спершу увімкніть відправку для цієї системи.'
         : 'Рекламна система відхилила тестову подію. Перевірте дані підключення.',
+      dryRun: false,
     };
   }
-  return { error: null };
+  return { error: null, dryRun: Boolean(res.data.dryRun) };
 }
 
 export async function googleAdsAuthUrlV2Action() {
@@ -602,6 +603,9 @@ export interface ConversionSettings {
   last30Days: Record<string, number>;
   byEvent: Array<{ eventName: string; status: string; count: number }>;
   recentFailures: Array<{ platform: string; eventName: string; error: string | null; at: string }>;
+  /** CONVERSIONS_DRY_RUN на сервері: події записуються, але нікуди не відправляються. Нема в старому API. */
+  dryRun?: boolean;
+  recentDeliveries?: Array<{ platform: string; eventName: string; request: unknown; at: string }>;
 }
 
 export async function updateConversionSettingsV2Action(data: Partial<Pick<ConversionSettings,
