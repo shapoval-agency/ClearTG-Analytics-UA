@@ -50,6 +50,8 @@ const META_EVENT_MAP: Record<string, string> = {
 };
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
+/** Код для перевірочної події, якщо в інтеграції не задано свій Test Event Code. */
+const META_VERIFY_TEST_CODE = 'TEST_CLEARTG_CHECK';
 
 @Injectable()
 export class MetaService {
@@ -223,6 +225,10 @@ export class MetaService {
       const body = await res.json().catch(() => null);
       if (res.ok) {
         checks.push({ id: 'pixel', label: 'Піксель і токен', status: 'ok', detail: `Доступ до пікселя «${(body as { name?: string })?.name ?? integration.pixelId}» підтверджено.` });
+      } else if (await this.canSendTestEvent(integration.pixelId, token, integration.testEventCode)) {
+        // Токен з Events Manager часто дозволяє лише відправку подій, а не читання
+        // пікселя (#100 Missing Permission). Для нас важлива саме відправка.
+        checks.push({ id: 'pixel', label: 'Піксель і токен', status: 'ok', detail: 'Meta прийняла перевірочну подію — токен може відправляти події в цей піксель. Подія видна лише в «Тестових подіях».' });
       } else {
         checks.push({
           id: 'pixel',
@@ -241,6 +247,33 @@ export class MetaService {
         : { id: 'test_mode', label: 'Тестовий режим', status: 'ok', detail: 'Події підуть у робочу статистику.' },
     );
     return checkResult(checks);
+  }
+
+  /**
+   * Перевірка права на відправку: подія з test_event_code потрапляє лише у
+   * «Тестові події» Events Manager і не враховується в статистиці реклами.
+   */
+  private async canSendTestEvent(pixelId: string, token: string, testEventCode: string | null): Promise<boolean> {
+    try {
+      const res = await fetch(`${GRAPH}/${pixelId}/events?access_token=${encodeURIComponent(token)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          test_event_code: testEventCode || META_VERIFY_TEST_CODE,
+          data: [{
+            event_name: 'ClearTGConnectionCheck',
+            event_time: Math.floor(Date.now() / 1000),
+            event_id: `cleartg_check_${Date.now()}`,
+            action_source: 'website',
+            user_data: { external_id: ['cleartg_connection_check'] },
+          }],
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { events_received?: number } | null;
+      return res.ok && (body?.events_received ?? 0) > 0;
+    } catch {
+      return false;
+    }
   }
 
   /** Увімкнення відправки — лише після успішної перевірки. */
