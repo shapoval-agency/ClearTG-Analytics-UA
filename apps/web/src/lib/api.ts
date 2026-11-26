@@ -312,3 +312,21 @@ export interface AgencyClient {
   subscribers: number;
   createdAt: string;
 }
+
+/** GET /api/agency/workspaces — усі кабінети платформи (адміністратор). */
+export interface AdminWorkspaceRow {
+  id: string;
+  name: string;
+  ownerEmail: string | null;
+  channels: number;
+  subscribers: number;
+  createdAt: string;
+  isMember: boolean;
+}
+
+/** Кабінет, який адміністратор переглядає, не будучи його учасником. */
+export interface AdminViewWorkspace {
+  id: string;
+  name: string;
+  ownerEmail: string | null;
+}

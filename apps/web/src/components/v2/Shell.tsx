@@ -8,6 +8,7 @@ import {
   ChartBar,
   LinkSimple,
   Megaphone,
+  ShieldCheck,
   SignOut,
   SquaresFour,
   TelegramLogo,
@@ -15,7 +16,7 @@ import {
 } from '@phosphor-icons/react';
 import { logoutAction } from '@/lib/account-actions';
 import { WorkspacePicker } from '@/components/v2/WorkspacePicker';
-import type { AuthMe } from '@/lib/api';
+import type { AdminViewWorkspace, AuthMe } from '@/lib/api';
 
 const NAV = [
   { href: '/v2', label: 'Огляд', icon: SquaresFour },
@@ -41,10 +42,13 @@ export function V2Shell({
   children,
   me,
   activeWorkspaceId,
+  adminView = null,
 }: {
   children: React.ReactNode;
   me: AuthMe | null;
   activeWorkspaceId: string | null;
+  /** Адміністратор переглядає чужий кабінет (лише перегляд). */
+  adminView?: AdminViewWorkspace | null;
 }) {
   const pathname = usePathname();
 
@@ -58,7 +62,14 @@ export function V2Shell({
 
           {me && (
             <div className="hidden min-w-0 lg:block lg:w-[190px] xl:w-[230px]">
-              <WorkspacePicker me={me} activeWorkspaceId={activeWorkspaceId} onDark />
+              {adminView ? (
+                <p className="truncate text-sm font-medium text-white" title={adminView.name}>
+                  {adminView.name}
+                  <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-amber-200">· перегляд</span>
+                </p>
+              ) : (
+                <WorkspacePicker me={me} activeWorkspaceId={activeWorkspaceId} onDark />
+              )}
             </div>
           )}
 
@@ -85,6 +96,17 @@ export function V2Shell({
           </nav>
 
           <div className="ml-auto flex min-w-0 items-center gap-3">
+            {me?.isAgencyAdmin && (
+              <Link
+                href="/v2/admin"
+                title="Усі кабінети платформи"
+                aria-label="Усі кабінети платформи"
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-blue-100/80 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              >
+                <ShieldCheck size={16} aria-hidden="true" />
+                <span className="hidden xl:inline">Усі кабінети</span>
+              </Link>
+            )}
             <Link
               href={LEGACY_DASHBOARD_HREF}
               title="Старий кабінет"
@@ -115,6 +137,18 @@ export function V2Shell({
           </div>
         </div>
       </header>
+
+      {adminView && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-1">
+            <span>
+              <strong>Режим перегляду адміністратора:</strong> кабінет «{adminView.name}»
+              {adminView.ownerEmail && ` (${adminView.ownerEmail})`}. Змінювати дані тут не можна; вхід записано в журнал.
+            </span>
+            <Link href="/v2/admin" className="font-semibold underline">До списку кабінетів</Link>
+          </div>
+        </div>
+      )}
 
       <main className="v2-main min-w-0 overflow-x-hidden px-4 pb-28 sm:px-6 lg:px-8 lg:pb-10">
         {children}

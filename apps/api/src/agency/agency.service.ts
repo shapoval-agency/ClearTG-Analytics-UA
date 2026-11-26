@@ -94,6 +94,79 @@ export class AgencyService {
     };
   }
 
+  /**
+   * Усі кабінети платформи для адміністратора — разом із тими, де він не учасник
+   * (клієнт зареєструвався сам). Пошук за назвою або email власника.
+   */
+  async listAllWorkspaces(adminUserId: string, search?: string) {
+    const q = search?.trim();
+    const workspaces = await this.prisma.workspace.findMany({
+      where: q
+        ? {
+            OR: [
+              { name: { contains: q, mode: 'insensitive' } },
+              { members: { some: { user: { email: { contains: q, mode: 'insensitive' } } } } },
+            ],
+          }
+        : {},
+      include: {
+        members: { select: { userId: true, role: true, user: { select: { email: true } } } },
+        _count: { select: { channels: true, subscriberProfiles: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+
+    return workspaces.map((w) => ({
+      id: w.id,
+      name: w.name,
+      ownerEmail: w.members.find((m) => m.role === WorkspaceRole.OWNER)?.user.email ?? null,
+      channels: w._count.channels,
+      subscribers: w._count.subscriberProfiles,
+      createdAt: w.createdAt,
+      isMember: w.members.some((m) => m.userId === adminUserId),
+    }));
+  }
+
+  /** Короткі дані кабінету для банера «режим перегляду адміністратора». */
+  async getWorkspaceSummary(workspaceId: string) {
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: {
+        id: true,
+        name: true,
+        members: { where: { role: WorkspaceRole.OWNER }, select: { user: { select: { email: true } } } },
+      },
+    });
+    if (!workspace) throw new NotFoundException('Кабінет не знайдено');
+    return { id: workspace.id, name: workspace.name, ownerEmail: workspace.members[0]?.user.email ?? null };
+  }
+
+  /**
+   * Вхід адміністратора в чужий кабінет. Пишемо в журнал аудиту самого кабінету:
+   * хто, коли й куди заходив — прозоро для подальшої перевірки.
+   */
+  async recordAdminView(adminUserId: string, adminEmail: string, workspaceId: string) {
+    const summary = await this.getWorkspaceSummary(workspaceId);
+    const isMember = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId: adminUserId } },
+      select: { id: true },
+    });
+    if (!isMember) {
+      await this.prisma.auditLog.create({
+        data: {
+          workspaceId,
+          userId: adminUserId,
+          action: 'platform_admin_view',
+          entityType: 'workspace',
+          entityId: workspaceId,
+          metadata: { adminEmail, readOnly: true },
+        },
+      });
+    }
+    return { ...summary, readOnly: !isMember };
+  }
+
   async listClientWorkspaces(agencyUserId: string) {
     const memberships = await this.prisma.workspaceMember.findMany({
       where: {

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/session';
-import { api, type AuthMe } from '@/lib/api';
+import { api, type AdminViewWorkspace, type AuthMe } from '@/lib/api';
 import { V2Shell } from '@/components/v2/Shell';
 
 export const metadata: Metadata = {
@@ -36,8 +36,18 @@ export default async function V2Layout({
     me = null;
   }
 
+  // Адміністратор у кабінеті, де він не учасник, — режим перегляду (банер у шапці).
+  let adminView: AdminViewWorkspace | null = null;
+  if (
+    me?.isAgencyAdmin &&
+    session.workspaceId &&
+    !me.workspaces.some((w) => w.id === session.workspaceId)
+  ) {
+    adminView = await api<AdminViewWorkspace>(`/api/agency/workspaces/${session.workspaceId}`).catch(() => null);
+  }
+
   return (
-    <V2Shell me={me} activeWorkspaceId={session.workspaceId}>
+    <V2Shell me={me} activeWorkspaceId={session.workspaceId} adminView={adminView}>
       {children}
     </V2Shell>
   );

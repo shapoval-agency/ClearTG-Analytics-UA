@@ -614,3 +614,30 @@ export async function updateConversionSettingsV2Action(data: Partial<Pick<Conver
     'Не вдалося зберегти налаштування');
   return { error: res.error };
 }
+
+/* ─── Адміністратор платформи ─────────────────────────────────────── */
+
+/**
+ * Вхід адміністратора в будь-який кабінет. Бекенд пише запис у журнал аудиту
+ * (для чужого кабінету) і далі пускає лише на перегляд.
+ */
+export async function openWorkspaceAsAdminV2Action(workspaceId: string) {
+  const jar = await cookies();
+  const token = jar.get('cleartg_token')?.value;
+  if (!token) redirect('/login');
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/agency/workspaces/${workspaceId}/view`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.' };
+  }
+  if (!res.ok) return { error: await readError(res, 'Не вдалося відкрити кабінет') };
+
+  await setWorkspace(workspaceId);
+  redirect('/v2');
+}
