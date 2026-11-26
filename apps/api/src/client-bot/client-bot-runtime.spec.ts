@@ -92,3 +92,27 @@ describe('ClientBotRuntimeService start failures', () => {
     expect(startMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('ClientBotRuntimeService — токен зі старим ключем', () => {
+  it('не розшифровується → бот вимикається з поясненням, старт не намагається', async () => {
+    const prisma = {
+      telegramBotConnection: {
+        findMany: vi.fn().mockResolvedValue([{ id: 'conn_1', isActive: true, tokenEnc: 'old', lastError: null }]),
+        update: vi.fn().mockResolvedValue({ workspaceId: 'ws', botUsername: 'cleartg_test_bot' }),
+        updateMany: vi.fn(),
+      },
+    };
+    const crypto = { decrypt: () => { throw new Error('Unsupported state or unable to authenticate data'); } };
+    const logger = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const runtime = new ClientBotRuntimeService(prisma as never, crypto as never, logger as never, { getBot: () => null } as never, {} as never);
+    startMock.mockReset();
+
+    await runtime.onModuleInit();
+
+    expect(startMock).not.toHaveBeenCalled();
+    expect(prisma.telegramBotConnection.update).toHaveBeenCalledWith({
+      where: { id: 'conn_1' },
+      data: expect.objectContaining({ isActive: false, lastError: expect.stringContaining('TOKEN_UNREADABLE') }),
+    });
+  });
+});

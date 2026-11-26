@@ -53,3 +53,10 @@ export function isRecoverableBotError(lastError: string | null | undefined): boo
   const e = lastError.toLowerCase();
   return e.includes('409') && !e.includes('webhook');
 }
+
+/**
+ * Позначка в lastError: токен бота не розшифровується (зашифрований іншим
+ * ENCRYPTION_KEY, наприклад до міграції сервера). Відновити можна лише
+ * повторним введенням токена — автоматично такий бот не піднімаємо.
+ */
+export const BOT_TOKEN_UNREADABLE = 'TOKEN_UNREADABLE';
