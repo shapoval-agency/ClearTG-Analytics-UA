@@ -1,4 +1,5 @@
 import clsx from 'clsx';
+import { WorkspaceTitleTag } from './workspace-context';
 
 /**
  * UI-кіт нового кабінету.
@@ -25,7 +26,10 @@ export function PageHeader({
       <div className="mx-auto flex max-w-[1536px] flex-wrap items-end justify-between gap-5">
         <div className="min-w-0">
           <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-blue-200">ClearTG Analytics</p>
-          <h1 className="text-3xl font-extrabold tracking-[-0.035em] text-white sm:text-4xl lg:text-[42px] lg:leading-none">{title}</h1>
+          <h1 className="text-3xl font-extrabold tracking-[-0.035em] text-white sm:text-4xl lg:text-[42px] lg:leading-none">
+            {title}
+            <WorkspaceTitleTag />
+          </h1>
           {description && (
             <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100 sm:text-base">{description}</p>
           )}
