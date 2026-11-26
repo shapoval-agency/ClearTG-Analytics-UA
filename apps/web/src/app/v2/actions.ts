@@ -641,3 +641,68 @@ export async function openWorkspaceAsAdminV2Action(workspaceId: string) {
   await setWorkspace(workspaceId);
   redirect('/v2');
 }
+
+/* ─── Подарунки (S4-01, S4-03, S4-04) ─────────────────────────────── */
+
+export interface GiftInput {
+  channelId: string;
+  name: string;
+  description?: string;
+  contentUrl?: string;
+  contentText?: string;
+  buttonText?: string;
+  consentText: string;
+}
+
+export interface GiftStats {
+  since: string;
+  subscribers: number;
+  claims: number;
+  claimRate: number | null;
+  bySource: Array<{ source: string; subscribers: number; claims: number; claimRate: number | null }>;
+}
+
+async function giftRequest<T>(path: string, init: RequestInit & { json?: unknown }, fallback: string) {
+  const headers = await channelHeaders(init.json !== undefined);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', data: null as T | null };
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers,
+      body: init.json !== undefined ? JSON.stringify(init.json) : undefined,
+      cache: 'no-store',
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.', data: null as T | null };
+  }
+  if (!res.ok) return { error: await readError(res, fallback), data: null as T | null };
+  const data = (await res.json().catch(() => null)) as T | null;
+  if (init.method !== 'GET') revalidatePath('/v2/links/gifts');
+  return { error: null, data };
+}
+
+export async function createGiftV2Action(input: GiftInput) {
+  const res = await giftRequest<{ id: string; botLink: string }>('/api/lead-magnets', { method: 'POST', json: input },
+    'Не вдалося створити подарунок');
+  return { error: res.error, botLink: res.data?.botLink ?? null };
+}
+
+export async function updateGiftV2Action(id: string, input: Partial<Omit<GiftInput, 'channelId'>> & { isActive?: boolean }) {
+  const res = await giftRequest(`/api/lead-magnets/${encodeURIComponent(id)}`, { method: 'PATCH', json: input },
+    'Не вдалося зберегти подарунок');
+  return { error: res.error };
+}
+
+export async function publishGiftV2Action(id: string, text: string) {
+  const res = await giftRequest<{ messageId: number; postUrl: string | null }>(
+    `/api/lead-magnets/${encodeURIComponent(id)}/publish`, { method: 'POST', json: { text } },
+    'Не вдалося опублікувати пост');
+  return { error: res.error, postUrl: res.data?.postUrl ?? null };
+}
+
+export async function giftStatsV2Action(id: string) {
+  const res = await giftRequest<GiftStats>(`/api/lead-magnets/${encodeURIComponent(id)}/stats`, { method: 'GET' },
+    'Не вдалося завантажити статистику');
+  return { error: res.error, stats: res.data };
+}

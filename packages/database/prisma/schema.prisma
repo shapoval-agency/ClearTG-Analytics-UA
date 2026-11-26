@@ -708,6 +708,10 @@ model LeadMagnet {
   name        String
   description String?
   contentUrl  String?  @map("content_url")
+  /// S4-03: текст матеріалу (можна разом із посиланням).
+  contentText String?  @map("content_text")
+  /// Напис на кнопці під постом.
+  buttonText  String   @default("Отримати подарунок") @map("button_text")
   consentText String   @map("consent_text")
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -723,13 +727,16 @@ model LeadMagnet {
 model LeadMagnetClaim {
   id                  String   @id @default(cuid())
   leadMagnetId        String   @map("lead_magnet_id")
-  subscriberProfileId String   @map("subscriber_profile_id")
+  /// null — людина підписалась до підключення бота, тож профілю підписки в нас немає.
+  subscriberProfileId String?  @map("subscriber_profile_id")
+  telegramUserId      String?  @map("telegram_user_id")
   claimedAt           DateTime @default(now()) @map("claimed_at")
   consentRecorded     Boolean  @default(true) @map("consent_recorded")
 
   leadMagnet        LeadMagnet        @relation(fields: [leadMagnetId], references: [id], onDelete: Cascade)
-  subscriberProfile SubscriberProfile @relation(fields: [subscriberProfileId], references: [id], onDelete: Cascade)
+  subscriberProfile SubscriberProfile? @relation(fields: [subscriberProfileId], references: [id], onDelete: Cascade)
 
+  @@index([leadMagnetId, telegramUserId])
   @@map("lead_magnet_claims")
 }
 
