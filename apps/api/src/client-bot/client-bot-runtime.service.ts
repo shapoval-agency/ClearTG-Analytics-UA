@@ -12,6 +12,7 @@ import {
   classifyBotStartError,
   isRecoverableBotError,
   BOT_START_RETRY_DELAYS_SEC,
+  BOT_TOKEN_UNREADABLE,
 } from '@cleartg/shared';
 import { BotStartEventStatus } from '@cleartg/database';
 
@@ -47,8 +48,14 @@ export class ClientBotRuntimeService implements OnModuleInit, OnModuleDestroy {
       });
       const connections = candidates.filter((c) => c.isActive || isRecoverableBotError(c.lastError));
       for (const connection of connections) {
+        let token: string;
         try {
-          const token = this.crypto.decrypt(connection.tokenEnc);
+          token = this.crypto.decrypt(connection.tokenEnc);
+        } catch (err) {
+          await this.markTokenUnreadable(connection.id, err);
+          continue;
+        }
+        try {
           await this.startBot(connection.id, token);
         } catch (err) {
           this.logger.error(
@@ -160,6 +167,36 @@ export class ClientBotRuntimeService implements OnModuleInit, OnModuleDestroy {
     } catch (dbErr) {
       this.logger.error(
         `Не вдалося позначити клієнтського бота ${connectionId} відключеним: ${dbErr instanceof Error ? dbErr.message : dbErr}`,
+        'ClientBot',
+      );
+    }
+  }
+
+  /**
+   * Токен не розшифровується (зашифрований старим ENCRYPTION_KEY). Раніше бот
+   * лишався «активним» у БД — і повторне підключення тим самим токеном
+   * відхилялось як «уже підключений». Тепер вимикаємо з поясненням, щоб клієнт
+   * міг просто ввести токен заново; історія стартів при цьому зберігається.
+   */
+  private async markTokenUnreadable(connectionId: string, err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err);
+    this.logger.error(
+      `Клієнтський бот ${connectionId}: токен не розшифровується (${reason}) — потрібно перепідключити токен в інтерфейсі.`,
+      'ClientBot',
+    );
+    try {
+      const updated = await this.prisma.telegramBotConnection.update({
+        where: { id: connectionId },
+        data: {
+          isActive: false,
+          lastError: `${BOT_TOKEN_UNREADABLE}: токен збережено іншим ключем шифрування (${reason})`,
+          lastErrorAt: new Date(),
+        },
+      });
+      await this.notifyDisconnected(updated.workspaceId, updated.botUsername);
+    } catch (dbErr) {
+      this.logger.error(
+        `Не вдалося позначити бота ${connectionId}: ${dbErr instanceof Error ? dbErr.message : dbErr}`,
         'ClientBot',
       );
     }

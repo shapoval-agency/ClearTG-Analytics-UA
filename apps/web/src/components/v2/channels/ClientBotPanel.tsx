@@ -9,6 +9,9 @@ import type { ClientBotConnection } from '@/lib/api';
 /** Пояснення причини відключення людськими словами (код помилки Telegram — у логах). */
 function botErrorHint(lastError: string): string {
   const e = lastError.toLowerCase();
+  if (e.includes('token_unreadable') || e.includes('unable to authenticate data')) {
+    return 'Токен цього бота збережено старим ключем шифрування (після переїзду сервера) — його треба ввести ще раз. Можна той самий.';
+  }
   if (e.includes('401') || e.includes('404') || e.includes('unauthorized')) {
     return 'Telegram більше не приймає токен — його відкликали або бота видалено в @BotFather. Згенеруйте новий токен.';
   }
