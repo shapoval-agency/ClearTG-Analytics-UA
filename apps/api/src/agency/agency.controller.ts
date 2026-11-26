@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import { IsEmail, IsString, MinLength } from 'class-validator';
 import { AgencyService } from './agency.service';
@@ -27,6 +28,35 @@ export class AgencyController {
   listClients(@CurrentUser() user: { id: string; email: string }) {
     this.agency.assertAgencyAdmin(user.email);
     return this.agency.listClientWorkspaces(user.id);
+  }
+
+  /** Усі кабінети платформи (адміністратор). */
+  @Get('workspaces')
+  listAllWorkspaces(
+    @CurrentUser() user: { id: string; email: string },
+    @Query('search') search?: string,
+  ) {
+    this.agency.assertAgencyAdmin(user.email);
+    return this.agency.listAllWorkspaces(user.id, search);
+  }
+
+  @Get('workspaces/:workspaceId')
+  workspaceSummary(
+    @Param('workspaceId') workspaceId: string,
+    @CurrentUser() user: { id: string; email: string },
+  ) {
+    this.agency.assertAgencyAdmin(user.email);
+    return this.agency.getWorkspaceSummary(workspaceId);
+  }
+
+  /** Вхід у кабінет: у чужому — лише перегляд, з записом у журнал аудиту. */
+  @Post('workspaces/:workspaceId/view')
+  viewWorkspace(
+    @Param('workspaceId') workspaceId: string,
+    @CurrentUser() user: { id: string; email: string },
+  ) {
+    this.agency.assertAgencyAdmin(user.email);
+    return this.agency.recordAdminView(user.id, user.email, workspaceId);
   }
 
   @Post('clients')
