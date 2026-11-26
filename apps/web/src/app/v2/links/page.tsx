@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { api, AuthError, type ClientBotConnection } from '@/lib/api';
 import { PageHeader, Card, ErrorState, DisconnectedState } from '@/components/v2/ui';
 import { LinksWorkspace } from '@/components/v2/links/LinksWorkspace';
+import { LinksTabs } from '@/components/v2/links/LinksTabs';
 import { LinkFilters } from '@/components/v2/links/LinkFilters';
 import {
   LinkBuilder,
@@ -61,10 +62,13 @@ export default async function V2LinksPage({
   }
 
   const header = (
-    <PageHeader
-      title="Посилання"
-      description="Створіть посилання під конкретне джерело — і у звітах буде видно, звідки прийшов кожен підписник."
-    />
+    <>
+      <PageHeader
+        title="Посилання"
+        description="Створіть посилання під конкретне джерело — і у звітах буде видно, звідки прийшов кожен підписник."
+      />
+      <LinksTabs active="links" />
+    </>
   );
 
   if (sessionExpired) {

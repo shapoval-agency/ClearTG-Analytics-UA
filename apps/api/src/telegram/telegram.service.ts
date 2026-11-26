@@ -6,6 +6,7 @@ import { AttributionService } from '../attribution/attribution.service';
 import { ConversionService } from '../conversion/conversion.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { LeadMagnetService } from '../lead-magnet/lead-magnet.service';
+import { parseClaimCallback } from '../lead-magnet/lead-magnet-content';
 import { InviteLinkService } from './invite-link.service';
 import { BotAdminService } from './bot-admin.service';
 import { tryPublicAppUrl } from '../common/public-app-url';
@@ -115,10 +116,7 @@ export class TelegramService implements OnModuleInit {
       if (payload.startsWith('lm_')) {
         const slug = payload.replace('lm_', '');
         const result = await this.leadMagnet.handleStart(userId, slug);
-        await ctx.reply(result.text);
-        if (result.channelLink) {
-          await ctx.reply(`Підпишіться на канал: ${result.channelLink}`);
-        }
+        await ctx.reply(result.text, result.keyboard ? { reply_markup: { inline_keyboard: result.keyboard } } : undefined);
         return;
       }
 
@@ -188,6 +186,19 @@ export class TelegramService implements OnModuleInit {
       await ctx.reply(`🖥 Кабінет ClearTG:\n${url}/v2`);
     });
 
+    // S4-01: кнопка «Отримати» під описом подарунка.
+    this.bot.callbackQuery(/^lm_claim:/, async (ctx) => {
+      const slug = parseClaimCallback(ctx.callbackQuery.data);
+      const userId = String(ctx.from?.id ?? '');
+      if (!slug || !userId) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      const result = await this.leadMagnet.handleClaim(userId, slug);
+      await ctx.answerCallbackQuery();
+      await ctx.reply(result.text, result.keyboard ? { reply_markup: { inline_keyboard: result.keyboard } } : undefined);
+    });
+
     this.bot.callbackQuery(/^menu:/, async (ctx) => {
       const action = ctx.callbackQuery.data?.replace('menu:', '') ?? '';
       const userId = String(ctx.from?.id ?? '');
@@ -234,7 +245,7 @@ export class TelegramService implements OnModuleInit {
 
       const lm = await this.leadMagnet.handleConsentMessage(userId, text);
       if (lm) {
-        await ctx.reply(lm.text);
+        await ctx.reply(lm.text, lm.keyboard ? { reply_markup: { inline_keyboard: lm.keyboard } } : undefined);
         return;
       }
 
@@ -748,6 +759,29 @@ export class TelegramService implements OnModuleInit {
     try {
       const member = await this.bot.api.getChatMember(chatId, parseInt(telegramUserId, 10));
       return member.status;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * S4-01: пост у канал із кнопкою-посиланням на подарунок.
+   * Потрібне право бота «Публікація повідомлень».
+   */
+  async postWithUrlButton(chatId: string, text: string, buttonText: string, url: string): Promise<number> {
+    if (!this.bot) throw new Error('Бот не налаштований (TELEGRAM_BOT_TOKEN)');
+    const message = await this.bot.api.sendMessage(chatId, text, {
+      reply_markup: { inline_keyboard: [[{ text: buttonText, url }]] },
+    });
+    return message.message_id;
+  }
+
+  /** Окреме запрошення для закритого каналу (без username) — не чіпає основне посилання каналу. */
+  async createNamedInviteLink(chatId: string, name: string): Promise<string | null> {
+    if (!this.bot) return null;
+    try {
+      const link = await this.bot.api.createChatInviteLink(chatId, { name: name.slice(0, 32) });
+      return link.invite_link;
     } catch {
       return null;
     }

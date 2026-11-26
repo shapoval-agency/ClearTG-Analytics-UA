@@ -11,14 +11,16 @@ import { ClientBotPanel } from '@/components/v2/channels/ClientBotPanel';
 export const dynamic = 'force-dynamic';
 
 /**
- * Сумісність із попередньою версією API, яка ще не віддавала
- * `botCanInviteUsers` у списку. Відсутнє поле не можна трактувати як false:
- * для активних каналів один раз уточнюємо реальний стан через уже наявний
- * bot-status endpoint. Після оновлення API цей fallback взагалі не виконується.
+ * Збережені права бота можуть бути застарілими: канал підключили до появи
+ * поля `botCanInviteUsers` (у БД воно тоді false) або Telegram-подію про зміну
+ * прав пропущено. Тому для активного каналу, де збережено проблему з правами
+ * (або старий API не віддав поле), уточнюємо реальний стан через bot-status —
+ * він же оновлює запис у БД. Канали без проблем Telegram не смикають.
  */
 async function hydrateLegacyBotPermissions(channels: ChannelListItem[]) {
   return Promise.all(channels.map(async (channel) => {
-    if (!channel.isActive || typeof channel.botCanInviteUsers === 'boolean') return channel;
+    const storedOk = channel.botIsAdmin && channel.botCanInviteUsers === true;
+    if (!channel.isActive || storedOk) return channel;
 
     try {
       const check = await api<BotStatusResponse>(`/api/channels/${channel.id}/bot-status`);
