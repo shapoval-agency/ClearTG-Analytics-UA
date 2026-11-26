@@ -16,6 +16,7 @@ import {
 } from '@phosphor-icons/react';
 import { logoutAction } from '@/lib/account-actions';
 import { WorkspacePicker } from '@/components/v2/WorkspacePicker';
+import { WorkspaceProvider, type CurrentWorkspace } from '@/components/v2/workspace-context';
 import type { AdminViewWorkspace, AuthMe } from '@/lib/api';
 
 const NAV = [
@@ -52,6 +53,15 @@ export function V2Shell({
 }) {
   const pathname = usePathname();
 
+  // Чий кабінет відкритий: свій (OWNER) — без позначок; клієнтський (ADMIN
+  // агенції або перегляд адміністратора) — назва клієнта в заголовку кожної сторінки.
+  const membership = me?.workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
+  const currentWorkspace: CurrentWorkspace | null = adminView
+    ? { name: adminView.name, isClient: true, readOnly: true }
+    : membership
+      ? { name: membership.name, isClient: membership.role !== 'OWNER', readOnly: false }
+      : null;
+
   return (
     <div className="v2-shell min-h-screen bg-[#f4f7fb] text-[#102044]">
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[#073aa8] text-white shadow-[0_8px_30px_rgba(4,34,99,0.18)]">
@@ -61,7 +71,7 @@ export function V2Shell({
           </Link>
 
           {me && (
-            <div className="hidden min-w-0 lg:block lg:w-[190px] xl:w-[230px]">
+            <div className="hidden min-w-0 shrink-0 lg:block lg:w-[160px] xl:w-[210px]">
               {adminView ? (
                 <p className="truncate text-sm font-medium text-white" title={adminView.name}>
                   {adminView.name}
@@ -73,7 +83,7 @@ export function V2Shell({
             </div>
           )}
 
-          <nav className="hidden h-full flex-1 items-center justify-center gap-1 lg:flex" aria-label="Основна навігація">
+          <nav className="hidden h-full min-w-0 flex-1 items-center justify-center gap-0.5 lg:flex xl:gap-1" aria-label="Основна навігація">
             {NAV.map((item) => {
               const active = isActive(pathname, item.href);
               const Icon = item.icon;
@@ -83,11 +93,11 @@ export function V2Shell({
                   href={item.href}
                   aria-current={active ? 'page' : undefined}
                   className={clsx(
-                    'relative flex h-full items-center gap-1.5 px-2.5 text-sm font-semibold transition-colors xl:gap-2 xl:px-4',
+                    'relative flex h-full items-center gap-1.5 whitespace-nowrap px-2 text-sm font-semibold transition-colors xl:gap-2 xl:px-3 2xl:px-4',
                     active ? 'text-white' : 'text-blue-100/80 hover:text-white',
                   )}
                 >
-                  <Icon size={18} weight={active ? 'fill' : 'regular'} aria-hidden="true" />
+                  <Icon size={18} weight={active ? 'fill' : 'regular'} aria-hidden="true" className="hidden xl:block" />
                   {item.label}
                   {active && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#63a3ff]" />}
                 </Link>
@@ -95,7 +105,7 @@ export function V2Shell({
             })}
           </nav>
 
-          <div className="ml-auto flex min-w-0 items-center gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 xl:gap-2">
             {me?.isAgencyAdmin && (
               <Link
                 href="/v2/admin"
@@ -104,7 +114,7 @@ export function V2Shell({
                 className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-blue-100/80 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
               >
                 <ShieldCheck size={16} aria-hidden="true" />
-                <span className="hidden xl:inline">Усі кабінети</span>
+                <span className="hidden whitespace-nowrap 2xl:inline">Усі кабінети</span>
               </Link>
             )}
             <Link
@@ -114,17 +124,17 @@ export function V2Shell({
               className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-blue-100/80 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               <ArrowSquareOut size={16} aria-hidden="true" />
-              <span className="lg:hidden xl:inline">Старий кабінет</span>
+              <span className="whitespace-nowrap lg:hidden 2xl:inline">Старий кабінет</span>
             </Link>
             {me?.user.email && (
-              <div className="hidden items-center gap-2 xl:flex">
-                <span className="grid size-9 place-items-center rounded-full bg-white/15 text-sm font-bold ring-1 ring-white/20">
+              <div className="hidden items-center gap-2 xl:flex" title={me.user.email}>
+                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/15 text-sm font-bold ring-1 ring-white/20">
                   {me.user.email.slice(0, 1).toUpperCase()}
                 </span>
-                <span className="max-w-48 truncate text-sm text-blue-50">{me.user.email}</span>
+                <span className="hidden max-w-48 truncate text-sm text-blue-50 2xl:inline">{me.user.email}</span>
               </div>
             )}
-            <form action={logoutAction} className="hidden lg:block">
+            <form action={logoutAction} className="hidden shrink-0 lg:block">
               <button
                 type="submit"
                 aria-label="Вийти"
@@ -151,7 +161,7 @@ export function V2Shell({
       )}
 
       <main className="v2-main min-w-0 overflow-x-hidden px-4 pb-28 sm:px-6 lg:px-8 lg:pb-10">
-        {children}
+        <WorkspaceProvider value={currentWorkspace}>{children}</WorkspaceProvider>
       </main>
 
       <nav
