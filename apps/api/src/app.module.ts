@@ -23,6 +23,7 @@ import { RetentionModule } from './retention/retention.module';
 import { LeadMagnetModule } from './lead-magnet/lead-magnet.module';
 import { AgencyModule } from './agency/agency.module';
 import { ClientBotModule } from './client-bot/client-bot.module';
+import { PublicApiModule } from './public-api/public-api.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -59,6 +60,7 @@ import { HealthController } from './health.controller';
     LeadMagnetModule,
     AgencyModule,
     ClientBotModule,
+    PublicApiModule,
   ],
   controllers: [HealthController],
 })
