@@ -706,3 +706,46 @@ export async function giftStatsV2Action(id: string) {
     'Не вдалося завантажити статистику');
   return { error: res.error, stats: res.data };
 }
+
+/* ─── API для CRM (S4-12, S4-13) ─────────────────────────────────────── */
+
+export interface ApiKeyItem {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+}
+
+async function apiKeyRequest<T>(path: string, init: RequestInit & { json?: unknown }, fallback: string) {
+  const headers = await channelHeaders(init.json !== undefined);
+  if (!headers) return { error: 'Сесія завершилася. Увійдіть знову.', data: null as T | null };
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers,
+      body: init.json !== undefined ? JSON.stringify(init.json) : undefined,
+      cache: 'no-store',
+    });
+  } catch {
+    return { error: 'Сервіс аналітики не відповідає. Спробуйте ще раз.', data: null as T | null };
+  }
+  if (!res.ok) return { error: await readError(res, fallback), data: null as T | null };
+  const data = (await res.json().catch(() => null)) as T | null;
+  revalidatePath('/v2/channels');
+  return { error: null, data };
+}
+
+/** Повний ключ повертається лише тут, один раз. */
+export async function createApiKeyV2Action(name: string) {
+  const res = await apiKeyRequest<ApiKeyItem & { key: string }>('/api/api-keys', { method: 'POST', json: { name } },
+    'Не вдалося створити ключ');
+  return { error: res.error, key: res.data?.key ?? null };
+}
+
+export async function revokeApiKeyV2Action(id: string) {
+  const res = await apiKeyRequest(`/api/api-keys/${encodeURIComponent(id)}`, { method: 'DELETE' },
+    'Не вдалося відкликати ключ');
+  return { error: res.error };
+}

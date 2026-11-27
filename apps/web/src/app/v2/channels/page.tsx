@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { headers } from 'next/headers';
 import { api, AuthError, type ClientBotConnection, type DigestSettings, type IntegrationStatus } from '@/lib/api';
 import { PageHeader, ErrorState, DisconnectedState } from '@/components/v2/ui';
 import { ChannelCard, type ChannelListItem } from '@/components/v2/channels/ChannelCard';
@@ -7,8 +8,18 @@ import type { BotStatusResponse } from '@/components/v2/channels/channel-status'
 import { IntegrationHealthPanel } from '@/components/v2/channels/IntegrationHealthPanel';
 import { DigestSettingsPanel } from '@/components/v2/channels/DigestSettingsPanel';
 import { ClientBotPanel } from '@/components/v2/channels/ClientBotPanel';
+import { ApiKeysPanel } from '@/components/v2/channels/ApiKeysPanel';
+import type { ApiKeyItem } from '@/app/v2/actions';
 
 export const dynamic = 'force-dynamic';
+
+/** Адреса для прикладу в документації API: той самий домен, /api проксюється на API. */
+async function publicBaseUrl() {
+  const h = await headers();
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000';
+  const proto = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https');
+  return `${proto}://${host}`;
+}
 
 /**
  * Збережені права бота можуть бути застарілими: канал підключили до появи
@@ -57,6 +68,7 @@ export default async function V2ChannelsPage() {
   let integrationStatus: IntegrationStatus | null = null;
   let digestSettings: DigestSettings | null = null;
   let clientBots: ClientBotConnection[] | null = null;
+  let apiKeys: ApiKeyItem[] | null = null;
   let failed = false;
   let sessionExpired = false;
 
@@ -65,14 +77,16 @@ export default async function V2ChannelsPage() {
     channels = await hydrateLegacyBotPermissions(storedChannels);
     // Нові S2 endpoints не повинні ламати базовий список під час rolling deploy,
     // коли web уже оновився, а API ще збирається.
-    const [integrationResult, digestResult, botsResult] = await Promise.allSettled([
+    const [integrationResult, digestResult, botsResult, apiKeysResult] = await Promise.allSettled([
       api<IntegrationStatus>('/api/channels/integration-status'),
       api<DigestSettings>('/api/telegram/digest-settings'),
       api<ClientBotConnection[]>('/api/client-bots'),
+      api<ApiKeyItem[]>('/api/api-keys'),
     ]);
     if (integrationResult.status === 'fulfilled') integrationStatus = integrationResult.value;
     if (digestResult.status === 'fulfilled') digestSettings = digestResult.value;
     if (botsResult.status === 'fulfilled') clientBots = botsResult.value;
+    if (apiKeysResult.status === 'fulfilled') apiKeys = apiKeysResult.value;
   } catch (err) {
     // middleware перекидає на /login лише коли cookie немає зовсім.
     // Протухлий токен доходить сюди — показуємо зрозумілий стан,
@@ -178,6 +192,7 @@ export default async function V2ChannelsPage() {
 
       <ConnectChannelPanel botUsername={botUsername} variant="compact" />
       {clientBots && <ClientBotPanel bots={clientBots} />}
+      {apiKeys && <ApiKeysPanel keys={apiKeys} apiBaseUrl={await publicBaseUrl()} />}
     </>
   );
 }
