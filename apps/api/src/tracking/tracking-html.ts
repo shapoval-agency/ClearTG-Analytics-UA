@@ -112,8 +112,23 @@ function openTelegramScript(ctx: LandingPageContext, autoGo?: { url: string; del
   if (!ctx.clickId || !ctx.apiOrigin) return '';
   const api = escapeHtml(ctx.apiOrigin.replace(/\/$/, ''));
   const clickId = escapeHtml(ctx.clickId);
+  const json = (v: string | null) => JSON.stringify(v).replace(/</g, '\\u003c');
+  // Телефон: спершу відкриваємо застосунок напряму (tg://), без вебсторінки t.me.
+  // Якщо за 2,5 с сторінка досі видима (застосунку нема, браузер заблокував
+  // перехід або людина не відповіла на «Відкрити в Telegram?» в iOS) — звичайний
+  // t.me. На компʼютері одразу t.me: діалог браузера закрився б запасним переходом.
   const go = autoGo
-    ? `setTimeout(function(){ identity(); location.replace(${JSON.stringify(autoGo.url).replace(/</g, '\\u003c')}); }, ${Math.max(0, Math.round(autoGo.delayMs))});`
+    ? `var web=${json(autoGo.url)}, app=${json(telegramAppUrl(autoGo.url))};
+  setTimeout(function(){
+    identity();
+    var mobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (app && mobile) {
+      location.href=app;
+      setTimeout(function(){ if (!document.hidden) location.replace(web); }, 2500);
+    } else {
+      location.replace(web);
+    }
+  }, ${Math.max(0, Math.round(autoGo.delayMs))});`
     : '';
   return `<script>
 (function(){
@@ -135,6 +150,33 @@ function openTelegramScript(ctx: LandingPageContext, autoGo?: { url: string; del
   ${go}
 })();
 </script>`;
+}
+
+/**
+ * Пряме посилання в застосунок Telegram для https://t.me/… — щоб на телефоні
+ * не показувалась проміжна вебсторінка t.me. null — формат не впізнали
+ * (тоді лишаємось на звичайному t.me).
+ */
+export function telegramAppUrl(httpsUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(httpsUrl);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || (url.hostname !== 't.me' && url.hostname !== 'telegram.me')) return null;
+  const parts = url.pathname.split('/').filter(Boolean);
+  if (parts.length === 0) return null;
+  const [first, second] = parts;
+  const enc = encodeURIComponent;
+  if (first.startsWith('+')) return `tg://join?invite=${enc(first.slice(1))}`;
+  if (first === 'joinchat' && second) return `tg://join?invite=${enc(second)}`;
+  if (!/^[a-zA-Z][a-zA-Z0-9_]{3,}$/.test(first)) return null;
+  const params = new URLSearchParams({ domain: first });
+  if (second && /^\d+$/.test(second)) params.set('post', second);
+  const start = url.searchParams.get('start');
+  if (start && /^[a-zA-Z0-9_-]{1,64}$/.test(start)) params.set('start', start);
+  return `tg://resolve?${params.toString()}`;
 }
 
 function escapeHtml(text: string): string {
@@ -177,15 +219,20 @@ export function renderTrackingPreviewPage(title: string, description: string): s
 </html>`;
 }
 
-/** tgtrack-style: capture click then redirect to Telegram (same HTML for all clients). */
+/**
+ * Швидка сторінка (S3-14): людина не має її бачити. Екран порожній, поки
+ * вантажаться теги реклами й відкривається Telegram; кнопка з’являється лише
+ * якщо переходу так і не сталося (CSS-затримка — працює і без JS).
+ */
 export function renderRedirectPage(ctx: LandingPageContext, delaySeconds: number): string {
   const channel = escapeHtml(ctx.channelTitle);
   const telegramUrl = escapeHtml(ctx.telegramUrl);
   const privacyUrl = escapeHtml(ctx.privacyPolicyUrl);
   const delay = Math.max(0, Math.min(delaySeconds, 10));
-  // S3-14: meta refresh — запасний перехід, якщо скрипти не завантажились або
-  // впали. Основний перехід робить JS (після збору cookies, S3-13).
+  // Meta refresh лише без JS: з JS він спрацював би у фоні вже після відкриття
+  // застосунку й підмінив сторінку на t.me.
   const fallbackDelay = delay + 2;
+  const revealAfter = delay + 3;
 
   return `<!DOCTYPE html>
 <html lang="uk">
@@ -193,22 +240,24 @@ export function renderRedirectPage(ctx: LandingPageContext, delaySeconds: number
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${channel} — Telegram</title>
-  <meta name="robots" content="index,follow">
-  <meta http-equiv="refresh" content="${fallbackDelay};url=${telegramUrl}">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#ffffff">
   ${adTagsHead(ctx)}
   <style>${baseStyles()}
-    body { display: flex; align-items: center; justify-content: center; }
-    .wrap { text-align: center; }
-    .spinner { margin: 1rem auto; width: 28px; height: 28px; border: 3px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    body { background: #fff; display: flex; align-items: center; justify-content: center; }
+    .wrap { text-align: center; opacity: 0; visibility: hidden; animation: reveal 0.2s ease ${revealAfter}s forwards; }
+    @keyframes reveal { to { opacity: 1; visibility: visible; } }
+    @media (prefers-reduced-motion: reduce) { .wrap { animation-duration: 0s; } }
   </style>
+  <noscript>
+    <meta http-equiv="refresh" content="${fallbackDelay};url=${telegramUrl}">
+    <style>.wrap { opacity: 1; visibility: visible; animation: none; }</style>
+  </noscript>
 </head>
 <body>
   <div class="wrap">
     <h1>${channel}</h1>
-    <div class="spinner"></div>
-    <p class="lead">Відкриваємо Telegram…</p>
-    <p class="no-js-note">Ми фіксуємо джерело переходу для аналітики реклами.</p>
+    <p class="lead">Telegram не відкрився автоматично.</p>
     <a class="cta" href="${telegramUrl}" rel="noopener noreferrer">Перейти до Telegram</a>
     <div class="footer"><a href="${privacyUrl}">Політика конфіденційності</a></div>
   </div>
